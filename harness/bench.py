@@ -69,9 +69,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-tokens", type=int, default=1024, help="output cap per turn")
     parser.add_argument(
         "--reasoning",
-        choices=["none", "low", "medium", "high"],
+        choices=["off", "none", "low", "medium", "high"],
         default="low",
-        help="thinking budget for reasoning models (default low; recorded in the conditions block)",
+        help="thinking budget for reasoning models (default low; recorded in the conditions block). "
+        "Use off for models that ignore effort and think past max_tokens.",
     )
     parser.add_argument("--local", action="store_true", help="use LOCAL_BASE_URL instead of OpenRouter")
     parser.add_argument("--out", type=Path, default=Path("bench"), help="where results-* go")

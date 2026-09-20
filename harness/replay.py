@@ -28,7 +28,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 
-from openai import OpenAI
+from openai import BadRequestError, OpenAI, RateLimitError
 
 from .client import Target, request_extras
 from .gate import check
@@ -49,6 +49,7 @@ class StreamResult:
     cost_usd: float | None
     reasoning_chars: int
     finish_reason: str | None
+    reasoning_used: str = ""  # what was actually requested, after any fallback
 
 
 def stream_one_call(
@@ -155,6 +156,45 @@ def stream_one_call(
     )
 
 
+def call_with_backoff(
+    client: OpenAI,
+    target: Target,
+    messages: list[dict],
+    session_id: str,
+    max_tokens: int,
+    reasoning: str,
+    attempts: int = 5,
+) -> StreamResult:
+    """Retry a call on HTTP 429, waiting longer each time.
+
+    Providers and OpenRouter enforce per-minute limits (a new OpenRouter account
+    gets 20 requests per minute on some models). A rate limit is not a property
+    of the model, so it should slow the run down, not fail a turn. Waits 5, 10,
+    20, 40 seconds between attempts; anything else raises immediately.
+
+    One more model-specific case: some endpoints refuse `reasoning: off`
+    ("Reasoning is mandatory for this endpoint"). Rather than fail every turn,
+    the call is retried once at effort "low" and the record notes the fallback,
+    because the developer chose "off" and should see that it did not apply.
+    """
+    for attempt in range(attempts):
+        try:
+            result = stream_one_call(client, target, messages, session_id, max_tokens, reasoning)
+            result.reasoning_used = reasoning
+            return result
+        except BadRequestError as err:
+            if reasoning == "off" and "reasoning" in str(err).lower():
+                result = stream_one_call(client, target, messages, session_id, max_tokens, "low")
+                result.reasoning_used = "low (endpoint refused off)"
+                return result
+            raise
+        except RateLimitError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(5 * (2**attempt))
+    raise RuntimeError("unreachable")
+
+
 def replay_trajectory(
     client: OpenAI,
     target: Target,
@@ -179,7 +219,7 @@ def replay_trajectory(
     for turn_index, turn in enumerate(trajectory.turns):
         history.append({"role": "user", "content": turn.input})
         try:
-            result = stream_one_call(client, target, history, session_id, max_tokens, reasoning)
+            result = call_with_backoff(client, target, history, session_id, max_tokens, reasoning)
             passed = check(turn.expected, result.text, result.tool_calls)
             records.append(
                 CallRecord(
@@ -201,6 +241,7 @@ def replay_trajectory(
                         "tool_calls": result.tool_calls,
                         "reasoning_chars": result.reasoning_chars,
                         "finish_reason": result.finish_reason,
+                        "reasoning_used": result.reasoning_used,
                     },
                 )
             )

@@ -75,7 +75,9 @@ def make_client(base_url: str) -> OpenAI:
             raise RuntimeError("OPENROUTER_API_KEY is not set (copy .env.example to .env)")
     else:
         key = os.environ.get("LOCAL_API_KEY") or "not-needed"
-    return OpenAI(api_key=key, base_url=base_url, timeout=120.0)
+    # max_retries covers transient failures; the 429 backoff in replay.py covers
+    # per-minute rate limits, which need longer waits than the SDK's default.
+    return OpenAI(api_key=key, base_url=base_url, timeout=120.0, max_retries=2)
 
 
 def request_extras(target: Target, session_id: str, reasoning: str = "low") -> tuple[dict, dict]:
@@ -87,18 +89,21 @@ def request_extras(target: Target, session_id: str, reasoning: str = "low") -> t
     in a header so a router that keeps KV-cache locality per session can use
     it, the same way MLPerf sends X-Session-ID.
 
-    `reasoning` caps how much a reasoning model thinks before answering
-    ("low", "medium", "high", or "none" to send nothing). OpenRouter maps it to
-    each model's own knob and ignores it for models without one. It defaults
-    to low because a classification turn does not need a thinking budget, and
-    an uncapped model can spend the whole max_tokens reasoning and emit no
-    answer at all, which the first smoke test did. The choice is a condition
-    and the report records it.
+    `reasoning` controls how much a reasoning model thinks before answering:
+    "low", "medium", "high" set an effort; "off" asks the model not to reason
+    at all (for models with a thinking toggle, such as Qwen3.x); "none" sends
+    nothing and takes the model's default. OpenRouter maps these to each
+    model's own knob and ignores them for models without one. Some models
+    honour "off" but not "low", which is why "off" exists: the fixture run
+    showed Qwen3.6 spending every output token thinking and emitting no answer
+    at effort low. The choice is a condition and the report records it.
     """
     extra_body: dict = {}
     if target.base_url == OPENROUTER_BASE_URL and target.provider not in ("auto", "local"):
         extra_body["provider"] = {"only": [target.provider], "allow_fallbacks": False}
-    if reasoning != "none":
+    if reasoning == "off":
+        extra_body["reasoning"] = {"enabled": False}
+    elif reasoning != "none":
         extra_body["reasoning"] = {"effort": reasoning}
     extra_headers = {
         "X-Session-ID": session_id,

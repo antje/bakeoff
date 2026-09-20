@@ -149,6 +149,25 @@ def summarise(records: list[CallRecord]) -> Summary:
         notes.append("endpoint reported no cost; cost columns are blank")
     if len(records) - len(ok):
         notes.append(f"{len(records) - len(ok)} call(s) errored and count as failed")
+    # A reasoning model that thinks past max_tokens produces no visible answer.
+    # That is a configuration problem (raise --max-tokens or set --reasoning off),
+    # not a model verdict, so it is called out rather than silently scored as wrong.
+    starved = sum(
+        1
+        for r in ok
+        if r.extra.get("finish_reason") == "length" and not r.output_text.strip()
+    )
+    fell_back = sum(1 for r in ok if "refused" in str(r.extra.get("reasoning_used", "")))
+    if fell_back:
+        notes.append(
+            f"{fell_back} call(s) ran at reasoning effort low because the endpoint refused "
+            "to disable reasoning; this row's latency and cost include reasoning tokens"
+        )
+    if starved:
+        notes.append(
+            f"{starved} call(s) hit max_tokens with no visible answer (reasoning consumed the "
+            "budget); raise --max-tokens or use --reasoning off before trusting this row"
+        )
 
     return Summary(
         model=records[0].model,

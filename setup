@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# bakeoff setup — symlink each skill into ~/.claude/skills/ (idempotent).
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILLS_SRC="$REPO_DIR/skills"
+SKILLS_DEST="$HOME/.claude/skills"
+
+mkdir -p "$SKILLS_DEST"
+
+linked=0
+for skill_dir in "$SKILLS_SRC"/*/; do
+  [ -d "$skill_dir" ] || continue
+  name="$(basename "$skill_dir")"
+  dest="$SKILLS_DEST/$name"
+  if [ -e "$dest" ] && [ ! -L "$dest" ]; then
+    echo "SKIP  $name — $dest exists and is not a symlink (won't clobber)"
+    continue
+  fi
+  ln -sfn "${skill_dir%/}" "$dest"
+  echo "LINK  $name → $dest"
+  linked=$((linked + 1))
+done
+
+echo
+echo "bakeoff: $linked skill(s) linked into $SKILLS_DEST"
+echo "Update anytime with: git -C $REPO_DIR pull && $REPO_DIR/setup"

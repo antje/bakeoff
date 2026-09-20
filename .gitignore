@@ -1,0 +1,28 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.ruff_cache/
+.pytest_cache/
+dist/
+
+# Bench runs. Trajectories are committed; results carry provider names, dates,
+# and costs from a specific key and are regenerated per run.
+bench/results-*
+bench/*.png
+
+# Node (linter only)
+node_modules/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code local state
+.claude/

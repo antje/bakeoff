@@ -13,8 +13,8 @@ MLPerf Inference v6.1 (results September 2026) added two agentic benchmarks. The
 | Component | MLPerf | bakeoff |
 |---|---|---|
 | Trajectories | 613 recorded, curated | your agent's own, 20 to 50, in `bench/trajectories.jsonl` |
-| Trajectory format | dataset schema | `{trajectory_id, turns: [{input, expected: {tool_call \| label}}]}` |
-| Replay | closed-loop, history accumulates, session-sticky | same; `concurrency` knob, default 1 |
+| Trajectory format | dataset schema | `{trajectory_id, system?, tools?, turns: [{input, expected: {tool_call \| label \| pattern}, tool_result?}]}` |
+| Replay | closed-loop, history accumulates, session-sticky, recorded tool outputs fed back | same; `concurrency` knob, default 1 |
 | Endpoint | OpenAI-compatible (vLLM, SGLang, TRT-LLM) | OpenRouter, or any OpenAI-compatible URL |
 | Model axis | two fixed models | any models on OpenRouter |
 | Silicon axis | whatever the submitter runs | same open model pinned to different providers (`provider.only`) |

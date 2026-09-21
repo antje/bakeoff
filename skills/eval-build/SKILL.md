@@ -17,9 +17,12 @@ model can judge (that benchmarks the judge, not the model), or accept ground tru
 written after looking at a model's output (that is grading on a curve you drew yourself).
 
 At every prompt below, the developer can type `demo` to load the worked example from
-`examples/product-coach/answers.md`. When they do, show the answer and its "why this is
-good" line, then ask whether to use that answer or take their own. The example teaches; it
-does not skip the lesson.
+`examples/product-coach/answers.md`, or `demo <name>` to load another example from
+`examples/<name>/answers.md`. At the first prompt, list the names once (every directory
+under `examples/` with a `scenario.md`; its first heading is the one-line description) so
+the developer can pick the shape closest to their own step. When they do, show the answer
+and its "why this is good" line, then ask whether to use that answer or take their own. The
+example teaches; it does not skip the lesson.
 
 ## When to use
 
@@ -37,8 +40,8 @@ does not skip the lesson.
 ## Stage gate
 
 Requires logs, transcripts, or a CSV with at least an input and an outcome per case (with
-`demo`, `examples/product-coach/logs.jsonl`). Writes `bench/trajectories.jsonl` and
-`bench/eval.md`.
+`demo`, `examples/product-coach/logs.jsonl`; with `demo <name>`, `examples/<name>/logs.jsonl`).
+Writes `bench/trajectories.jsonl` and `bench/eval.md`.
 
 ## 1. Name one step, not the whole app
 
@@ -187,6 +190,7 @@ Then hand off: "Run `/bakeoff` next."
 Before the eval is called done:
 
 - [ ] Each trajectory has an input per turn and exactly one of label, tool_call, or pattern per turn
+- [ ] A trajectory whose turns expect a tool_call carries the tool schemas in `tools` and a recorded `tool_result` per turn
 - [ ] At least 20 trajectories; the count is in `eval.md`
 - [ ] Every ground-truth rule is a comparison a human can re-run without a model
 - [ ] The trivial-baseline rate is computed and written down
@@ -204,6 +208,7 @@ carry into reports). Hands off to `/bakeoff`.
 
 - `/bakeoff` runs what this skill writes.
 - `examples/product-coach/` is the full worked example: logs, trajectories, eval description, answers.
+- `examples/README.md` lists the other examples, one per workload shape, and which verdict each produced.
 - `docs/mlperf-mapping.md` for why the gate is deterministic and the replay is closed-loop.
 
 *Framework source of truth: `docs/mlperf-mapping.md` in the bakeoff repo.*

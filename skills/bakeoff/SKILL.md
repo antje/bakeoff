@@ -15,9 +15,11 @@ when the workload is an agent (per task, or nothing), call a one-run difference 
 (two runs, or say "single run"), or present an endpoint-level number as a fact about a chip.
 
 At every prompt below, the developer can type `demo` to load the worked example from
-`examples/product-coach/answers.md`. When they do, show the answer and its "why this is
-good" line, then ask whether to use that answer or take their own. The example is there to
-teach, not to skip the lesson.
+`examples/product-coach/answers.md`, or `demo <name>` to load another example from
+`examples/<name>/answers.md`. At the first prompt, list the names once (every directory
+under `examples/` with a `scenario.md`) so the developer can pick the shape closest to their
+own step. When they do, show the answer and its "why this is good" line, then ask whether to
+use that answer or take their own. The example is there to teach, not to skip the lesson.
 
 ## When to use
 
@@ -35,7 +37,8 @@ teach, not to skip the lesson.
 ## Stage gate
 
 Requires `bench/trajectories.jsonl` and `bench/eval.md` from `/eval-build` (offer to run it
-if missing; with `demo`, use `examples/product-coach/trajectories.jsonl`). Requires an
+if missing; with `demo`, use `examples/product-coach/trajectories.jsonl`; with `demo <name>`,
+`examples/<name>/trajectories.jsonl`). Requires an
 `OPENROUTER_API_KEY` in `.env`, or `LOCAL_BASE_URL` for a self-hosted endpoint. Writes
 `bench/results-<stamp>.md` and `bench/results-<stamp>.json`.
 
@@ -51,8 +54,17 @@ and a floor.
 **Example.** `openai/gpt-oss-120b` (an open model many providers serve), `qwen/qwen3.6-35b-a3b`
 (smaller, should be cheaper), `anthropic/claude-sonnet-5` (the quality ceiling).
 
-**Your turn.** Ask: "Which models? Give me two or three OpenRouter ids, or type `demo`."
-Read the answer key `models`.
+**Your turn.** Ask: "Which model do you ship today?" Read the answer key `ceiling`. Then ask:
+"Which models? Give me two or three OpenRouter ids, type `auto` to let the harness propose
+three from the catalog, or type `demo`." Read the answer key `models`.
+
+With `auto`, the harness reads the hard requirements off the trajectories (tool calls, context
+at the longest trajectory's last turn), drops every catalog model that cannot meet them, prices
+the rest on this workload's own token mix, and picks three points on a log-price line: the
+cheapest that qualifies, the model you ship, and the one closest to the geometric mean of the
+two. Show the shortlist and its reasons before the run; the developer can edit it. The floor
+is not a recommendation: it is the cheapest model that could work, and the gate decides
+whether it does.
 
 *What you just learned: a bake-off needs a ceiling and a floor, or the middle means nothing.*
 
@@ -110,8 +122,8 @@ providers, twice, is 480 calls. See the number before the invoice does.
 **Your turn.** Run:
 
 ```
-uv run python -m harness.bench --trajectories <path> --models <ids> [--providers <slugs>] \
-  --concurrency <n> --runs <n> [--limit <n>] --reasoning <level>
+uv run python -m harness.bench --trajectories <path> --models <ids|auto> [--ceiling <id>] \
+  [--providers <slugs>] --concurrency <n> --runs <n> [--limit <n>] --reasoning <level>
 ```
 
 Show the estimate. Confirm. Narrate the progress lines as they arrive: each one is a
@@ -193,6 +205,7 @@ Before the report is called done:
 - [ ] The verdict sentence names the cell, the gate rate, the tolerance, and the deciding metric
 - [ ] Any single-run result is labelled "single run"
 - [ ] The endpoint-level disclaimer is present above the table
+- [ ] The trivial-baseline row is above the model rows, and no model at or below it is called a contender
 
 ## Output contract
 
@@ -206,5 +219,6 @@ they chose and why, including anything the gate could not see.
 - `/eval-build` writes the trajectories this skill runs. Run it first if `bench/trajectories.jsonl` does not exist.
 - `docs/mlperf-mapping.md` explains what MLPerf's agentic benchmark does and what this keeps.
 - `examples/product-coach/results-sample.md` is a finished report to compare against.
+- `examples/README.md` shows one bake-off per workload shape and the different verdict each produced.
 
 *Framework source of truth: `docs/mlperf-mapping.md` in the bakeoff repo.*

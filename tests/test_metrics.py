@@ -111,3 +111,26 @@ def test_trivial_baseline_takes_the_best_constant_per_turn():
     assert baseline.per_turn[1] == ("id-1", 2, 3)
     assert baseline.per_turn[2] == ("", 0, 3)
     assert abs(baseline.rate - 4 / 9) < 1e-9
+
+
+def test_verdict_drops_cells_over_the_ttft_budget():
+    from dataclasses import replace
+
+    from harness.metrics import Summary
+    from harness.report import verdict
+
+    def cell(model, rate, ttft, cost):
+        return Summary(
+            model=model, provider="auto", calls=10, errors=0, trajectories=5, gate_pass_rate=rate,
+            ttft_p50_s=ttft / 2, ttft_p95_s=ttft, tpot_p50_s=0.01, tpot_p95_s=0.02, e2e_p50_s=1, e2e_p95_s=2,
+            tokens_per_s_per_user_p50=50, input_tokens_p50=100, output_tokens_p50=10, cost_total_usd=cost,
+            cost_per_task_usd=cost / 5, cost_per_correct_call_usd=cost / 10, consistency=None,
+        )
+
+    cheap_slow = cell("small", 0.99, 4.5, 0.01)
+    fast = cell("mid", 1.0, 1.9, 0.02)
+    assert "small" in verdict([cheap_slow, fast])
+    with_budget = verdict([cheap_slow, fast], ttft_budget_s=2.0)
+    assert with_budget.startswith("Route to mid")
+    assert "small @ auto (4.50s)" in with_budget
+    assert "No verdict" in verdict([replace(fast, ttft_p95_s=3.0), cheap_slow], ttft_budget_s=2.0)

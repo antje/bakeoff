@@ -31,6 +31,8 @@ uv run python -m harness.bench \
 
 Then, in Claude Code inside your own repo: `/eval-build` (type `demo` at any prompt to load the worked example), then `/bakeoff`.
 
+Not sure which models to try? `--models auto --ceiling <the model you ship>` reads the requirements off your trajectories (tool calls, context), drops every catalog model that cannot meet them, prices the rest on your workload, and proposes three points on a log-price line: the cheapest that qualifies, the one you ship, and one in between. The gate decides; the price only picks the candidates.
+
 ## What a result looks like
 
 Three models on the worked example, 20 trajectories × 3 turns, replayed twice, concurrency 1 to 2 (full report with conditions: [`examples/product-coach/results-sample.md`](examples/product-coach/results-sample.md)):
@@ -77,4 +79,4 @@ Every module opens with what it does, why it exists, and where it sits. `uv run 
 
 ## Status
 
-Working end to end on the worked example. Not yet: the LLM-judge option, a chart, a second example scenario, a `--local` run against vLLM (the code path exists; untested).
+Working end to end on the worked example. Not yet: pruning candidates by eval (run the shortlist on five trajectories, drop what fails the gate, run survivors on everything), the LLM-judge option, a chart, a second example scenario, a `--local` run against vLLM (the code path exists; untested).

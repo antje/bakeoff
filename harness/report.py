@@ -13,9 +13,12 @@ a table without it. This is the same discipline MLPerf enforces through its
 submission rules, applied to a developer's afternoon.
 
 The verdict is computed, not chosen: the cheapest cell (by cost per correct
-call) whose gate pass rate is within `tolerance` of the best cell's. If no
-cell has a cost, the verdict falls back to the fastest p95 TTFT among the
-most accurate cells.
+call) whose gate pass rate is within `tolerance` of the best cell's and whose
+TTFT p95 is inside the latency budget, when the developer gave one. A cheap
+cell that makes the user wait past the budget is not a candidate, however
+accurate; the eval description names the budget and the report applies it.
+If no cell has a cost, the verdict falls back to the fastest p95 TTFT among
+the most accurate cells.
 
 The table's first row is the trivial baseline: what a constant answer per
 turn would score on this eval, computed from the trajectories before any
@@ -53,6 +56,7 @@ class RunConditions:
     endpoint: str
     judged: bool
     reasoning: str = "low"  # thinking budget requested from reasoning models
+    ttft_budget_s: float | None = None  # p95 TTFT a cell must meet to be a contender
 
 
 def harness_commit() -> str:
@@ -74,11 +78,18 @@ def group_by_target(records: list[CallRecord]) -> dict[tuple[str, str], list[Cal
     return cells
 
 
-def verdict(summaries: list[Summary], tolerance: float = 0.05, baseline: float = 0.0) -> str:
+def verdict(
+    summaries: list[Summary],
+    tolerance: float = 0.05,
+    baseline: float = 0.0,
+    ttft_budget_s: float | None = None,
+) -> str:
     """Name the cell to route to, and say why in one sentence.
 
     Cells at or below the trivial baseline are not contenders: routing to a
-    model that a constant answer would beat is not a routing decision.
+    model that a constant answer would beat is not a routing decision. Cells
+    whose TTFT p95 is over the latency budget are not contenders either, and
+    the sentence names the ones that were dropped for it.
     """
     scored = [s for s in summaries if s.calls - s.errors > 0]
     if not scored:
@@ -90,6 +101,19 @@ def verdict(summaries: list[Summary], tolerance: float = 0.05, baseline: float =
             "The eval is not separating models; tighten the gate or the prompts before routing."
         )
     scored = above
+    too_slow: list[Summary] = []
+    if ttft_budget_s is not None:
+        too_slow = [s for s in scored if s.ttft_p95_s > ttft_budget_s]
+        scored = [s for s in scored if s.ttft_p95_s <= ttft_budget_s]
+        if not scored:
+            return (
+                f"No verdict: every cell's TTFT p95 is over the {ttft_budget_s:.1f}s budget. "
+                "Relax the budget on purpose or pin a faster provider."
+            )
+    dropped = ""
+    if too_slow:
+        names = ", ".join(f"{s.model} @ {s.provider} ({s.ttft_p95_s:.2f}s)" for s in too_slow)
+        dropped = f" Over the {ttft_budget_s:.1f}s TTFT p95 budget and not considered: {names}."
     best_rate = max(s.gate_pass_rate for s in scored)
     contenders = [s for s in scored if s.gate_pass_rate >= best_rate - tolerance]
     priced = [s for s in contenders if s.cost_per_correct_call_usd is not None]
@@ -98,19 +122,22 @@ def verdict(summaries: list[Summary], tolerance: float = 0.05, baseline: float =
         return (
             f"Route to {pick.model} @ {pick.provider}: gate {pick.gate_pass_rate:.0%} "
             f"(within {tolerance:.0%} of the best, {best_rate:.0%}) at "
-            f"${pick.cost_per_correct_call_usd:.4f} per correct call, the cheapest of "
-            f"{len(contenders)} contender(s)."
+            f"{_fmt_usd(pick.cost_per_correct_call_usd)} per correct call, the cheapest of "
+            f"{len(contenders)} contender(s)." + dropped
         )
     pick = min(contenders, key=lambda s: s.ttft_p95_s)
     return (
         f"Route to {pick.model} @ {pick.provider}: gate {pick.gate_pass_rate:.0%} and the "
         f"lowest p95 TTFT ({pick.ttft_p95_s:.2f}s) among {len(contenders)} contender(s). "
-        "No cost reported by these endpoints, so cost did not decide."
+        "No cost reported by these endpoints, so cost did not decide." + dropped
     )
 
 
 def _fmt_usd(value: float | None) -> str:
-    return "n/a" if value is None else f"${value:.4f}"
+    """Four decimals, or six when the value would otherwise round to nothing."""
+    if value is None:
+        return "n/a"
+    return f"${value:.6f}" if 0 < value < 0.001 else f"${value:.4f}"
 
 
 def _fmt_pct(value: float | None) -> str:
@@ -133,6 +160,8 @@ def markdown_report(
         f"- Trajectories: {c.trajectories}, turns per trajectory p50: {c.turns_per_trajectory_p50:.0f}",
         f"- Runs per trajectory: {c.runs}, concurrency: {c.concurrency}, max_tokens: {c.max_tokens}",
         f"- Reasoning effort requested: {c.reasoning} (applies to reasoning models only)",
+        "- TTFT p95 budget: "
+        + (f"{c.ttft_budget_s:.1f}s (cells over it are not contenders)" if c.ttft_budget_s else "none given"),
         f"- Cache state: {c.warm_or_cold} (the harness never pre-warms)",
         f"- Input tokens p50: {c.input_tokens_p50:.0f}, output tokens p50: {c.output_tokens_p50:.0f}",
         "- Timings are client-side wall clock and include network time",
@@ -167,7 +196,8 @@ def markdown_report(
     lines += [header, "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     if baseline is not None:
         answers = ", ".join(
-            f"turn {i + 1}: {answer!r}" for i, (answer, _, _) in sorted(baseline.per_turn.items())
+            f"turn {i + 1}: {answer if answer else 'none passes'}"
+            for i, (answer, _, _) in sorted(baseline.per_turn.items())
         )
         lines.append(
             f"| *trivial baseline* | *constant answer* | *{baseline.rate:.0%}* | | | | | | | | | |"
@@ -189,7 +219,11 @@ def markdown_report(
         "",
         "## Verdict",
         "",
-        verdict(summaries, baseline=baseline.rate if baseline else 0.0),
+        verdict(
+            summaries,
+            baseline=baseline.rate if baseline else 0.0,
+            ttft_budget_s=conditions.ttft_budget_s,
+        ),
         "",
     ]
     notes = [f"- {s.model} @ {s.provider}: {n}" for s in summaries for n in s.notes]

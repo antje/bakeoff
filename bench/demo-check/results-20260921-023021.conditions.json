@@ -1,0 +1,15 @@
+{
+  "date_utc": "2026-09-21 02:30",
+  "trajectories": 4,
+  "turns_per_trajectory_p50": 3.0,
+  "concurrency": 1,
+  "runs": 1,
+  "max_tokens": 400,
+  "warm_or_cold": "cold",
+  "input_tokens_p50": 1571.0,
+  "output_tokens_p50": 60.0,
+  "harness_commit": "9511afe",
+  "endpoint": "https://openrouter.ai/api/v1",
+  "judged": false,
+  "reasoning": "low"
+}

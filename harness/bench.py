@@ -11,6 +11,11 @@ Typical runs:
     uv run python -m harness.bench --trajectories bench/trajectories.jsonl \\
         --models openai/gpt-oss-120b,qwen/qwen3.6-35b-a3b,anthropic/claude-sonnet-5
 
+    # Let the harness propose the three from the catalog: cheapest that can run
+    # your workload, the model you ship, and one in between on a log-price line:
+    uv run python -m harness.bench --trajectories bench/trajectories.jsonl \\
+        --models auto --ceiling anthropic/claude-sonnet-5
+
     # Same model, four silicon types:
     uv run python -m harness.bench --trajectories bench/trajectories.jsonl \\
         --models openai/gpt-oss-120b --providers cerebras,groq,sambanova,together
@@ -18,6 +23,10 @@ Typical runs:
     # Quick live demo on five trajectories, twice, to see consistency:
     uv run python -m harness.bench --trajectories examples/product-coach/trajectories.jsonl \\
         --models openai/gpt-oss-120b --limit 5 --runs 2
+
+    # A tool-calling agent: schemas and recorded tool results travel in the JSONL:
+    uv run python -m harness.bench --trajectories examples/tool-router/trajectories.jsonl \\
+        --models openai/gpt-oss-120b,anthropic/claude-sonnet-5 --max-tokens 200
 
     # Your own vLLM server:
     LOCAL_BASE_URL=http://localhost:8000/v1 uv run python -m harness.bench \\
@@ -40,6 +49,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+from .candidates import describe, fetch_catalog, qualify, requirements, shortlist
 from .client import OPENROUTER_BASE_URL, Target, endpoint_info, find_endpoint, make_client
 from .estimate import estimate_run, over_budget
 from .models import CallRecord, Trajectory, load_trajectories
@@ -56,7 +66,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         epilog=__doc__.split("Typical runs:")[1],
     )
     parser.add_argument("--trajectories", type=Path, required=True, help="JSONL from /eval-build")
-    parser.add_argument("--models", required=True, help="comma-separated model ids")
+    parser.add_argument(
+        "--models",
+        required=True,
+        help="comma-separated model ids, or 'auto' to shortlist three from the OpenRouter catalog "
+        "(cheapest that can run the workload, the model you ship, one in between)",
+    )
+    parser.add_argument(
+        "--ceiling",
+        default=None,
+        help="with --models auto: the model you ship today, used as the top of the price line",
+    )
     parser.add_argument(
         "--providers",
         default="auto",
@@ -73,6 +93,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="low",
         help="thinking budget for reasoning models (default low; recorded in the conditions block). "
         "Use off for models that ignore effort and think past max_tokens.",
+    )
+    parser.add_argument(
+        "--ttft-budget",
+        type=float,
+        default=None,
+        help="p95 time to first token, in seconds, a cell must meet to be a contender in the verdict "
+        "(from your eval description's latency budget; recorded in the conditions block)",
     )
     parser.add_argument("--local", action="store_true", help="use LOCAL_BASE_URL instead of OpenRouter")
     parser.add_argument("--out", type=Path, default=Path("bench"), help="where results-* go")
@@ -142,7 +169,25 @@ def main(argv: list[str] | None = None) -> int:
     if not trajectories:
         print("no trajectories to run", file=sys.stderr)
         return 2
-    targets = build_targets(args.models, args.providers, args.local)
+    models = args.models
+    if models.strip() == "auto":
+        if args.local:
+            print("--models auto needs the OpenRouter catalog; name the model with --local", file=sys.stderr)
+            return 2
+        req = requirements(trajectories, args.max_tokens)
+        catalog = fetch_catalog()
+        if not catalog:
+            print("could not fetch the OpenRouter catalog; pass --models <ids>", file=sys.stderr)
+            return 2
+        try:
+            picks = shortlist(qualify(catalog, req), args.ceiling)
+        except ValueError as err:
+            print(f"{err}; pass --models <ids>", file=sys.stderr)
+            return 2
+        print(describe(req, picks))
+        print()
+        models = ",".join(picks.models)
+    targets = build_targets(models, args.providers, args.local)
 
     # Price it first. A bake-off should never surprise anyone on the invoice.
     estimates = estimate_run(trajectories, targets, args.runs, args.max_tokens)
@@ -187,6 +232,7 @@ def main(argv: list[str] | None = None) -> int:
         endpoint="local" if args.local else OPENROUTER_BASE_URL,
         judged=False,
         reasoning=args.reasoning,
+        ttft_budget_s=args.ttft_budget,
     )
     args.out.mkdir(parents=True, exist_ok=True)
     json_path, md_path, summaries = write_report(

@@ -38,6 +38,7 @@ or just within noise.
 - `trajectories.jsonl`: the 32 two-turn conversations `/eval-build` produces from them
 - `eval.md`: the finished eval description
 - `answers.md`: every interview answer, each with one line on why it is a good answer
-- `results-sample.md`: a finished report from a real run
+- `results-sample.md`: a finished report from a real run, four models
+- `results-providers-sample.md`: the star baker on six providers, two of them as error rows
 
 Regenerate with `uv run python scripts/examples/ticket_triage.py`.

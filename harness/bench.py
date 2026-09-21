@@ -28,6 +28,11 @@ Typical runs:
     uv run python -m harness.bench --trajectories examples/tool-router/trajectories.jsonl \\
         --models openai/gpt-oss-120b,anthropic/claude-sonnet-5 --max-tokens 200
 
+    # The eval has a latency budget and every miss costs money: only cells under
+    # 2 s TTFT p95 and at the best gate rate can win, and the report says why:
+    uv run python -m harness.bench --trajectories bench/trajectories.jsonl \\
+        --models auto --ceiling anthropic/claude-sonnet-5 --ttft-budget 2 --tolerance 0
+
     # Your own vLLM server:
     LOCAL_BASE_URL=http://localhost:8000/v1 uv run python -m harness.bench \\
         --trajectories bench/trajectories.jsonl --models my-model --local
@@ -101,6 +106,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="p95 time to first token, in seconds, a cell must meet to be a contender in the verdict "
         "(from your eval description's latency budget; recorded in the conditions block)",
     )
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=0.05,
+        help="how far below the best gate rate a cell can be and still be a contender in the verdict "
+        "(default 0.05; use 0 when every miss is expensive, e.g. a wrong refund; "
+        "recorded in the conditions block)",
+    )
     parser.add_argument("--local", action="store_true", help="use LOCAL_BASE_URL instead of OpenRouter")
     parser.add_argument("--out", type=Path, default=Path("bench"), help="where results-* go")
     parser.add_argument("--yes", action="store_true", help="skip the cost confirmation prompt")
@@ -163,9 +176,8 @@ def main(argv: list[str] | None = None) -> int:
     load_dotenv()
     args = parse_args(argv)
 
-    trajectories = load_trajectories(args.trajectories)
-    if args.limit:
-        trajectories = trajectories[: args.limit]
+    all_trajectories = load_trajectories(args.trajectories)
+    trajectories = all_trajectories[: args.limit] if args.limit else all_trajectories
     if not trajectories:
         print("no trajectories to run", file=sys.stderr)
         return 2
@@ -174,7 +186,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.local:
             print("--models auto needs the OpenRouter catalog; name the model with --local", file=sys.stderr)
             return 2
-        req = requirements(trajectories, args.max_tokens)
+        # Shortlist on the whole file, so --limit changes the run, not the candidates.
+        req = requirements(all_trajectories, args.max_tokens)
         catalog = fetch_catalog()
         if not catalog:
             print("could not fetch the OpenRouter catalog; pass --models <ids>", file=sys.stderr)
@@ -233,6 +246,7 @@ def main(argv: list[str] | None = None) -> int:
         judged=False,
         reasoning=args.reasoning,
         ttft_budget_s=args.ttft_budget,
+        tolerance=args.tolerance,
     )
     args.out.mkdir(parents=True, exist_ok=True)
     json_path, md_path, summaries = write_report(

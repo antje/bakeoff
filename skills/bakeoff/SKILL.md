@@ -123,7 +123,8 @@ providers, twice, is 480 calls. See the number before the invoice does.
 
 ```
 uv run python -m harness.bench --trajectories <path> --models <ids|auto> [--ceiling <id>] \
-  [--providers <slugs>] --concurrency <n> --runs <n> [--limit <n>] --reasoning <level>
+  [--providers <slugs>] --concurrency <n> --runs <n> [--limit <n>] --reasoning <level> \
+  [--ttft-budget <s>] [--tolerance <0..1>]
 ```
 
 Show the estimate. Confirm. Narrate the progress lines as they arrive: each one is a
@@ -155,7 +156,10 @@ conditions first is how they stay facts.
 - **errors**: calls that failed outright; they count as failed in the gate.
 
 **The verdict** is computed, not chosen: the cheapest cell by cost per correct call whose
-gate is within 5% of the best. Read it, then argue with it if you know something the table
+gate is within a tolerance of the best (5% by default; `--tolerance 0` when every miss
+costs money, as in the tool-router example, where 98% and 100% are not the same thing).
+The tolerance comes from the eval description's cost of being wrong and is recorded in the
+conditions block. Read the verdict, then argue with it if you know something the table
 does not (a quality difference the gate cannot see, a provider you cannot use for policy
 reasons). Write the argument down next to it.
 

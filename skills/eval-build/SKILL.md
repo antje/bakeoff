@@ -18,7 +18,9 @@ written after looking at a model's output (that is grading on a curve you drew y
 
 At every prompt below, the developer can type `demo` to load the worked example from
 `examples/product-coach/answers.md`, or `demo <name>` to load another example from
-`examples/<name>/answers.md`. At the first prompt, list the names once (every directory
+`examples/<name>/answers.md`. Steps 4 to 6 have no answer key: there, `demo <name>` copies
+the example's finished files into `bench/`, so the interview ends with the same two files a
+developer's own logs would have produced. At the first prompt, list the names once (every directory
 under `examples/` with a `scenario.md`; its first heading is the one-line description) so
 the developer can pick the shape closest to their own step. When they do, show the answer
 and its "why this is good" line, then ask whether to use that answer or take their own. The
@@ -129,6 +131,11 @@ to `bench/trajectories.jsonl`, one JSON object per line:
 
 Validate with `uv run python -c "from harness.models import load_trajectories; from pathlib import Path; print(len(load_trajectories(Path('bench/trajectories.jsonl'))))"`.
 
+With `demo` or `demo <name>` here, the example already has this file: copy
+`examples/<name>/trajectories.jsonl` to `bench/trajectories.jsonl`, show one line of it, and
+say that a developer's own file is built from their own logs the same way, one trajectory per
+logged case. Do not generate a new one; the example's ground truth is the lesson.
+
 *What you just learned: multi-turn is where the real cost and the real failures live.*
 
 ## 5. Check the sample size, then check the trivial baseline
@@ -145,7 +152,11 @@ zero of your scale.
 trivial baseline is 60%.
 
 **Your turn.** Count the trajectories. Below 20: refuse, and say how many more to label.
-Compute the majority-class rate per turn and write it into the eval description.
+Compute the majority-class rate per turn and write it into the eval description. The harness
+does it: `uv run python -c "from harness.models import load_trajectories; from harness.metrics import trivial_baseline; from pathlib import Path; t = load_trajectories(Path('bench/trajectories.jsonl')); print(len(t), trivial_baseline(t))"`
+prints the count, the overall rate, and per turn the constant answer that scores best and
+how many it gets right. With `demo <name>`, run it on the copied file and read the number
+aloud; it is the zero of the scale the bake-off will use.
 
 *What you just learned: the trivial baseline is the zero of your scale; sample size is its resolution.*
 
@@ -161,7 +172,9 @@ can interpret.
 **Example.** `examples/product-coach/eval.md`.
 
 **Your turn.** Write it. Include one honesty note about the biggest limit of the ground truth.
-Then hand off: "Run `/bakeoff` next."
+With `demo <name>`, copy `examples/<name>/eval.md` to `bench/eval.md` and point at its
+"Known limits" section: that is the honesty note, written before any model ran. Then hand
+off: "Run `/bakeoff` next."
 
 *What you just learned: an eval is a file plus its description; the description is the part people read.*
 

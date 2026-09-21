@@ -57,6 +57,7 @@ class RunConditions:
     judged: bool
     reasoning: str = "low"  # thinking budget requested from reasoning models
     ttft_budget_s: float | None = None  # p95 TTFT a cell must meet to be a contender
+    tolerance: float = 0.05  # how far below the best gate rate a cell can be and still contend
 
 
 def harness_commit() -> str:
@@ -162,6 +163,7 @@ def markdown_report(
         f"- Reasoning effort requested: {c.reasoning} (applies to reasoning models only)",
         "- TTFT p95 budget: "
         + (f"{c.ttft_budget_s:.1f}s (cells over it are not contenders)" if c.ttft_budget_s else "none given"),
+        f"- Gate tolerance: {c.tolerance:.0%} (cells this far below the best gate rate still contend)",
         f"- Cache state: {c.warm_or_cold} (the harness never pre-warms)",
         f"- Input tokens p50: {c.input_tokens_p50:.0f}, output tokens p50: {c.output_tokens_p50:.0f}",
         "- Timings are client-side wall clock and include network time",
@@ -221,6 +223,7 @@ def markdown_report(
         "",
         verdict(
             summaries,
+            tolerance=conditions.tolerance,
             baseline=baseline.rate if baseline else 0.0,
             ttft_budget_s=conditions.ttft_budget_s,
         ),

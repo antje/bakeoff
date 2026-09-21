@@ -27,7 +27,7 @@ what makes the eval blind.
 |---|---|---|---|
 | 1 | OBJECT or DECLINE? | OBJECT if the experiment's actual lift was at or below +0.5pp, otherwise DECLINE | label |
 | 2 | Which objection type, or NONE? | `repeated-mechanism` for a feeling-led change on the early funnel that failed; `assumed-causation` for other failures; `none` for a decline | label |
-| 3 | Cite up to three supporting ids | at least one cited id exists in the history the model was shown | pattern |
+| 3 | Cite up to three supporting ids | at least one cited id is a precedent for the call: same mechanism and same outcome as the verdict (failed for OBJECT, worked for DECLINE); if the history has none, same audience and outcome; if none of those, any past experiment with that outcome | pattern |
 
 No LLM judge. Every check is a string or regex comparison a human can re-run.
 

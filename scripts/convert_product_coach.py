@@ -19,8 +19,14 @@ agentic benchmark needs and what most developers think they do not have.
 The ground truth, in one sentence: an objection was *right* if the experiment
 went on to fail. So the expected verdict for a brief is OBJECT when its actual
 lift was flat or negative, and DECLINE when it went on to work. The objection
-type is the corpus rule stated as a category. The citation turn just checks
-that the model cites ids that exist in the history it was shown.
+type is the corpus rule stated as a category. The citation turn checks that
+the model cites a precedent that actually supports the call: a past experiment
+with the same mechanism whose outcome matches the verdict (failed for OBJECT,
+worked for DECLINE); when the history has none, the same audience with that
+outcome; when it has none of those either, any past experiment with that
+outcome. "Any id in the history" was the first version of this gate, and a
+constant answer of ex-001 passed it every time, which the harness's trivial
+baseline row made visible. A gate a constant can pass is not a gate.
 
 Run:  uv run python scripts/convert_product_coach.py [path/to/corpus.ts]
 """
@@ -126,8 +132,28 @@ def make_log(experiment: dict, history: list[dict]) -> dict:
     }
 
 
+def supporting_ids(experiment: dict, history: list[dict]) -> list[str]:
+    """The past experiments that support the expected call, strongest class available.
+
+    Same mechanism and same outcome first (the coach's own rule is about
+    mechanisms); then the same audience and outcome (a precedent on the same
+    funnel stage); then any experiment with the same outcome. Returns at least
+    one id whenever the history has any experiment with the right outcome.
+    """
+    verdict = expected_verdict(experiment)
+    same_outcome = [h for h in history if expected_verdict(h) == verdict]
+    for tier in (
+        [h for h in same_outcome if h["mechanism"] == experiment["mechanism"]],
+        [h for h in same_outcome if h["audience"] == experiment["audience"]],
+        same_outcome,
+    ):
+        if tier:
+            return [h["id"] for h in tier]
+    return []
+
+
 def make_trajectory(experiment: dict, history: list[dict]) -> dict:
-    ids = "|".join(re.escape(h["id"]) for h in history) or "ex-000"
+    ids = "|".join(re.escape(i) for i in supporting_ids(experiment, history)) or "ex-000"
     return {
         "trajectory_id": experiment["id"],
         "system": SYSTEM_RULES + "\n\n" + render_history(history),

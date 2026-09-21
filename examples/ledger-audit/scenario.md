@@ -1,5 +1,7 @@
 # Worked example: ledger audit
 
+*A finance assistant's running-balance step. In: batches of postings and reversals, one per turn, six turns. Out: one exact figure about the current position after each batch.*
+
 Load it with `demo ledger-audit` at any prompt in `/eval-build` or `/bakeoff`.
 
 ## The use case, in four sentences

@@ -17,9 +17,23 @@ when the workload is an agent (per task, or nothing), call a one-run difference 
 At every prompt below, the developer can type `demo` to load the worked example from
 `examples/product-coach/answers.md`, or `demo <name>` to load another example from
 `examples/<name>/answers.md`. At the first prompt, list the names once (every directory
-under `examples/` with a `scenario.md`) so the developer can pick the shape closest to their
-own step. When they do, show the answer and its "why this is good" line, then ask whether to
-use that answer or take their own. The example is there to teach, not to skip the lesson.
+under `examples/` with a `scenario.md`; show the italic line under its first heading, which
+says what goes in and what comes out) so the developer can pick the shape closest to their
+own step.
+
+**Demo mode.** `demo` or `demo <name>` at the first prompt puts the whole interview in demo
+mode: do not stop to ask again. For every remaining step, print the step's heading and its
+concept, why-it-matters and example lines in full, then the question you would have asked,
+then the demo answer and its "why this is good" line, then run the step's command and show
+the result. Continue straight to the next step. Where an answer offers two values (a
+live look and a full result), take the live-look one and say so. If the example has a
+`live` answer key, demo mode follows it instead of rerunning the model run: at step 4 show
+the conditions block and verdict of `examples/<name>/results-sample.md`, say that this is the
+kept model run and is not being rerun, and run live only the provider run the `live` key
+names, with the shape it gives. Two exceptions, because they spend money:
+show the cost estimate in step 4 and confirm before the run starts, and at the end of step 5
+ask before starting the provider run. `demo` typed at a later prompt instead of the first
+applies to that one answer only: show it, and ask whether to use it or take their own.
 
 ## When to use
 
@@ -68,7 +82,7 @@ whether it does.
 
 *What you just learned: a bake-off needs a ceiling and a floor, or the middle means nothing.*
 
-## 2. Choose the providers: same weights, different silicon
+## 2. Choose the providers: same weights, different silicon (usually a second run)
 
 **Concept.** On OpenRouter, one open model is often served by several providers on different
 hardware: Cerebras (wafer-scale), Groq (LPU), SambaNova (RDU), Together and others (NVIDIA
@@ -79,14 +93,32 @@ hardware behind an endpoint changes time to first token by multiples and price b
 It is also the honest boundary: what you measure is the endpoint (their stack, their
 hardware, the network), not the chip. The report says so.
 
-**Example.** `cerebras,groq,sambanova,together` on `openai/gpt-oss-120b`. Check
+**When to answer it.** A bake-off is normally two runs, and the provider question belongs to
+the second:
+
+1. **Model run.** Providers `auto`: OpenRouter routes each model wherever it routes. This
+   answers "which model is good enough at the lowest cost per correct call."
+2. **Provider run**, only if the winner (or a close contender) is an open model *and* the
+   step cares about latency or price per call. Rerun that one model alone with
+   `--models <winner> --providers <slugs>`. This answers "which endpoint should serve it."
+
+Do not pin providers on the model run: the harness crosses every model with every provider,
+so three models times four providers is twelve cells, and the closed models (Sonnet, GPT)
+are not served by Cerebras or Groq at all; those cells just error. If the developer has not
+run the model run yet, the answer here is `auto`, and this step comes back after step 5.
+
+**Example.** First run: `auto`. Second run: `cerebras,groq,sambanova,together` on
+`openai/gpt-oss-120b`, once it has won or come close. Check
 `GET https://openrouter.ai/api/v1/models/<model>/endpoints` first; a provider not serving the
 model today should be dropped with a note, not guessed.
 
-**Your turn.** Ask: "Pin providers for the open model? Comma-separated slugs, `auto` to let
-OpenRouter route, or `demo`." Read the answer key `providers`.
+**Your turn.** Ask: "Is this the model run or the provider run? For the model run, answer
+`auto`. For the provider run, give the one open model and comma-separated provider slugs, or
+type `demo`." On the model run read answer key `providers` (always `auto`); on the provider
+run read answer key `provider-run`, which names the one model and the slugs.
 
-*What you just learned: "which chip" is one flag away, and the number you get is endpoint-level.*
+*What you just learned: pick the model first, then the silicon; "which chip" is one flag
+away, and the number you get is endpoint-level.*
 
 ## 3. Set the shape of the run: concurrency, runs, limit, reasoning
 
@@ -130,12 +162,22 @@ uv run python -m harness.bench --trajectories <path> --models <ids|auto> [--ceil
 Show the estimate. Confirm. Narrate the progress lines as they arrive: each one is a
 trajectory finishing with its pass count.
 
+In demo mode, also read answer key `flags` if the example has one (`--tolerance 0`,
+`--ttft-budget 2`): it carries the eval's cost of being wrong or latency budget into the run,
+and is part of both runs.
+
+On the provider run, `--models` is the one open model and `--providers` the slugs; the
+`--ceiling` flag is not needed, the ceiling was settled by the model run.
+
 *What you just learned: cost is multiplicative; estimate first.*
 
 ## 5. Read the table, in this order
 
 **Concept.** The report has a conditions block, a per-cell endpoint table (quantization and
-list prices), the results table, and a computed verdict. Read them in that order.
+list prices), the results table, a computed verdict, and an "At a glance" table under it.
+Read them in that order. The harness prints the whole report to the terminal and writes it
+to `bench/results-<stamp>.md` (`--out` changes the directory), with every call in
+`results-<stamp>.json` next to it.
 
 **Why it matters.** Reading the results first is how numbers get misremembered. Reading the
 conditions first is how they stay facts.
@@ -163,6 +205,21 @@ conditions block. Read the verdict, then argue with it if you know something the
 does not (a quality difference the gate cannot see, a provider you cannot use for policy
 reasons). Write the argument down next to it.
 
+If the verdict, or a cell within tolerance of it, is an open model and the eval's conditions
+name a latency or price budget, offer the provider run now: back to step 2 with that model.
+Otherwise the bake-off is one run. In demo mode, read answer key `provider-run`: if the
+example has one, that is the second run to offer (show its answer and "why this is good",
+confirm, then run it with `--models <that model> --providers <slugs>` and the same shape);
+if it has none, say the example stops at one run and why.
+
+**At a glance** is the same results cut to the columns a decision is read from, costs per
+thousand so they read as money, the verdict's cell starred. It comes in two shapes: several
+models (gate, TTFT p50, e2e p95, $/1k tasks, $/1k correct, consistency), or one model on
+several providers (quantization, gate, TTFT p50 and p95, tok/s/user, $/1k correct). Point
+the developer at it last: the full table holds every column, the conditions block governs
+both, and the at-a-glance table is the one to paste into a slide, with the conditions line
+under it.
+
 *What you just learned: p95 is the product; cost per correct call is the price.*
 
 ## 6. Say what the numbers cannot say
@@ -176,6 +233,13 @@ endpoint on OpenRouter served gpt-oss-120b at fp16 with a 0.45 s median TTFT at 
 
 **Your turn.** Before the report leaves your machine, read the conditions block aloud once.
 If any line is missing, the harness did not run correctly; do not paste the table.
+
+Then close with the numbers, not a summary of them. The last thing on screen is, for each
+run this session made, its "At a glance" table copied verbatim from the report (the model
+run's, then the provider run's), each followed by one line of its conditions (date,
+trajectories, runs, concurrency, reasoning, tolerance or budget) and the path of its
+`results-<stamp>.md`. That is the table that goes on a slide; the developer should not have
+to open the file to find it.
 
 *What you just learned: the boring sentence is the true one.*
 
@@ -210,6 +274,7 @@ Before the report is called done:
 - [ ] Any single-run result is labelled "single run"
 - [ ] The endpoint-level disclaimer is present above the table
 - [ ] The trivial-baseline row is above the model rows, and no model at or below it is called a contender
+- [ ] The session ends with each run's "At a glance" table verbatim, its conditions line, and its report path
 
 ## Output contract
 

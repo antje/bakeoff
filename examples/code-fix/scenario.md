@@ -1,5 +1,7 @@
 # Worked example: code fix
 
+*A review copilot's fix step on a red CI run. In: the function, the failing test, and the CI output. Out: the kind of bug, the corrected function, and what it returns now.*
+
 Load it with `demo code-fix` at any prompt in `/eval-build` or `/bakeoff`.
 
 ## The use case, in four sentences

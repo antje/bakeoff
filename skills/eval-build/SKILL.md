@@ -21,10 +21,18 @@ At every prompt below, the developer can type `demo` to load the worked example 
 `examples/<name>/answers.md`. Steps 4 to 6 have no answer key: there, `demo <name>` copies
 the example's finished files into `bench/`, so the interview ends with the same two files a
 developer's own logs would have produced. At the first prompt, list the names once (every directory
-under `examples/` with a `scenario.md`; its first heading is the one-line description) so
-the developer can pick the shape closest to their own step. When they do, show the answer
-and its "why this is good" line, then ask whether to use that answer or take their own. The
-example teaches; it does not skip the lesson.
+under `examples/` with a `scenario.md`; the italic line under its first heading says what
+goes in and what comes out, so show it next to the name) so the developer can pick the shape
+closest to their own step.
+
+**Demo mode.** `demo` or `demo <name>` at the first prompt puts the whole interview in demo
+mode: do not stop to ask again. For every remaining step, print the step's heading and its
+concept, why-it-matters and example lines in full, then the question you would have asked,
+then the demo answer and its "why this is good" line, then run the step's command or copy
+its file and show the result. Continue straight to the next step. The developer reads the
+same lessons, in the same order, without typing `demo` six times. `demo` typed at a later
+prompt instead of the first applies to that one answer only: show it, and ask whether to use
+it or take their own.
 
 ## When to use
 
@@ -47,21 +55,26 @@ Writes `bench/trajectories.jsonl` and `bench/eval.md`.
 
 ## 1. Name one step, not the whole app
 
-**Concept.** An agent is several steps: classify, look something up, draft, decide. Each has
-its own input shape, its own definition of correct, and its own tolerance for latency and
-cost. An eval is built per step.
+**Concept.** Your app is not one thing the model does. It is a chain of small jobs: sort a
+ticket into a queue, pull one number out of a contract, write a reply, pick a tool to call.
+Each job takes a different kind of input and has a different meaning of "right". So you test
+one job at a time.
 
-**Why it matters.** "Is the model good at my app" has no answer. "Does the model classify
-these tickets correctly" does. Mixing steps mixes definitions of correct, and the pass rate
-stops meaning anything.
+**Why it matters.** "Is this model good at my app?" cannot be measured; there is no single
+right answer to check against. "Does this model put these 200 tickets in the right queue?"
+can be. Mix several jobs into one test and an 80% pass rate tells you nothing, because
+"right" meant something different on every row.
 
-**Example.** Good: "the objection step: brief in, verdict plus type plus citations out."
-Bad: "the coach."
+**Example.** Good: "the objection step. In: an experiment brief. Out: object or not, what
+kind of objection, and which past experiments it cites." Bad: "the coach" (that is the whole
+app, not one job).
 
-**Your turn.** Ask: "Which step? Describe what goes in and what comes out, or type `demo`."
-Read answer key `step`.
+**Your turn.** Ask: "Which job do you want to test? Tell me what goes in and what comes out,
+or type `demo` for a worked example." Then list the demos, one line each: the name, then
+what goes in and what comes out. Read answer key `step`.
 
-*What you just learned: evals are per step, because "correct" is per step.*
+*What you just learned: you test one job at a time, because "right" means something
+different for each job.*
 
 ## 2. Find the logs that already have the answer in them
 
@@ -140,30 +153,53 @@ logged case. Do not generate a new one; the example's ground truth is the lesson
 
 ## 5. Check the sample size, then check the trivial baseline
 
-**Concept.** Twenty trajectories is the floor; fifty is comfortable. And every eval has a
-trivial baseline: the score a model gets by always giving the most common answer.
+**Concept.** Two sanity checks before the eval counts as one. First: how many trajectories
+are there? Twenty is the minimum this skill accepts; fifty is comfortable. Second: what score
+would a model get without reading anything, by giving the same answer every single time?
+That score is the *trivial baseline*. A real model has to beat it, so it is the zero of your
+scale, not 0%.
 
-**Why it matters.** With 20 three-turn trajectories, one flipped answer moves the pass rate
-by under 2%. With 5, by 7%, and no difference between models is real. And if 60% of turn-1
-answers are DECLINE, a model scoring 60% on turn 1 has learned nothing; the baseline is the
-zero of your scale.
+**Why it matters.** Sample size: with 20 three-turn trajectories, one flipped answer moves
+the pass rate by under 2%. With 5, by 7%, and no difference between models is real.
+Baseline: if 12 of 20 turn-1 answers are DECLINE, a model that always says DECLINE scores
+60% on turn 1 without reading a single brief. A model scoring 60% there has learned nothing.
+Only the gap above the baseline counts.
 
-**Example.** The demo set: 20 trajectories, 60 turns, 8 OBJECT / 12 DECLINE, so the turn-1
-trivial baseline is 60%.
+**Example.** The product-coach demo: 20 trajectories, 60 turns. Turn 1 has 8 OBJECT and
+12 DECLINE, so always answering DECLINE gets 12 of 20 right. The turn-1 trivial baseline is
+60%.
 
-**Your turn.** Count the trajectories. Below 20: refuse, and say how many more to label.
-Compute the majority-class rate per turn and write it into the eval description. The harness
-does it: `uv run python -c "from harness.models import load_trajectories; from harness.metrics import trivial_baseline; from pathlib import Path; t = load_trajectories(Path('bench/trajectories.jsonl')); print(len(t), trivial_baseline(t))"`
-prints the count, the overall rate, and per turn the constant answer that scores best and
-how many it gets right. With `demo <name>`, run it on the copied file and read the number
-aloud; it is the zero of the scale the bake-off will use.
+**Your turn.** Run both checks and report each one in plain words, in this order:
 
-*What you just learned: the trivial baseline is the zero of your scale; sample size is its resolution.*
+1. **Sample size.** Count the trajectories in `bench/trajectories.jsonl`. Say the number
+   and whether it clears the minimum, for example: "20 trajectories. The minimum is 20, so
+   this passes, but only just; 50 would make the numbers steadier." Below 20: stop, and say
+   how many more to label.
+2. **Trivial baseline.** Run
+   `uv run python -c "from harness.models import load_trajectories; from harness.metrics import trivial_baseline; from pathlib import Path; t = load_trajectories(Path('bench/trajectories.jsonl')); print(len(t), trivial_baseline(t))"`.
+   It prints the count, the overall rate, and for each turn the one constant answer that
+   scores best and how many it gets right. Explain the result so a newcomer can follow it,
+   for example: "Turn 1: always answering DECLINE gets 12 of 20 right, so 60% is the floor
+   for turn 1. Overall: 48%. A model has to score above 48% before it has shown it read
+   anything." When the baseline is 0%, say why: every expected answer is different per
+   trajectory (an id, an amount, a name), so no single constant answer matches any of them.
+
+Both numbers go into the eval description in step 6.
+
+With `demo <name>`: say up front that these checks run on the example's file, copied into
+`bench/` in step 4, standing in for the developer's own logs, and that the assumption is
+that their own file would be checked the same way. Then run the command and read the
+numbers out as above.
+
+*What you just learned: the trivial baseline is the score a model gets without reading
+anything; every real score is measured from there, not from 0%. Sample size is how finely
+you can tell two scores apart.*
 
 ## 6. Write the eval description
 
-**Concept.** `bench/eval.md` says what is measured, where the trajectories came from, the
-ground-truth rule per turn, the sample size and trivial baseline, and the known limits.
+**Concept.** `bench/eval.md` is the one-page write-up of the eval: what is measured, where
+the trajectories came from, the rule for "correct" on each turn, the sample size and trivial
+baseline from step 5, and the known limits.
 
 **Why it matters.** The description is what lets someone else trust, reproduce, or argue with
 the numbers `/bakeoff` will produce. Without it the trajectories file is an artefact nobody

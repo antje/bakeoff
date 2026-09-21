@@ -1,5 +1,7 @@
 # Worked example: product-coach's objection step
 
+*A product coach's objection step. In: an experiment brief plus the team's past experiments. Out: object or not, the kind of objection, and the past experiments it cites.*
+
 This is the scenario the skills load when you type `demo` at any prompt. It is a real
 step from a real project, so every answer in `answers.md` is one a developer actually
 had to give.

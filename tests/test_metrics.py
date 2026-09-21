@@ -155,3 +155,36 @@ def test_verdict_is_provisional_not_withheld_under_the_baseline():
     assert out.startswith("Provisional (no cell beat the trivial baseline of 58%")
     assert "Route to b @ auto" in out
     assert verdict([cell("a", 0.9, 0.01)], baseline=0.58).startswith("Route to a")
+
+
+def test_at_a_glance_stars_the_verdict_cell_and_picks_the_shape_by_what_was_compared():
+    from dataclasses import replace
+
+    from harness.metrics import Summary
+    from harness.report import RunConditions, at_a_glance, verdict
+
+    def cell(model, provider, rate, cost):
+        return Summary(
+            model=model, provider=provider, calls=10, errors=0, trajectories=5, gate_pass_rate=rate,
+            ttft_p50_s=0.5, ttft_p95_s=1.0, tpot_p50_s=0.01, tpot_p95_s=0.02, e2e_p50_s=1, e2e_p95_s=2,
+            tokens_per_s_per_user_p50=50, input_tokens_p50=100, output_tokens_p50=10, cost_total_usd=cost,
+            cost_per_task_usd=cost / 5, cost_per_correct_call_usd=cost / 10, consistency=None,
+        )
+
+    conditions = RunConditions(
+        date_utc="2026-09-21 00:00", trajectories=5, turns_per_trajectory_p50=2, concurrency=1, runs=1,
+        max_tokens=100, warm_or_cold="cold", input_tokens_p50=100, output_tokens_p50=10, harness_commit="x",
+        endpoint="e", judged=False, reasoning="off",
+    )
+    # several models: model shape, costs per thousand, the verdict's cell starred
+    models = [cell("small", "auto", 0.98, 0.01), cell("big", "auto", 1.0, 0.10)]
+    text = "\n".join(at_a_glance(models, conditions, {}))
+    assert "| model | gate |" in text and "$ / 1k correct" in text
+    assert "| small ★ | 98% |" in text and "| big | 100% |" in text
+    assert "$1.00 |" in text  # 0.01 / 10 per correct call, times a thousand
+    assert verdict(models, as_cell=True) is models[0]
+    # one model on several providers: provider shape, quantization column, star follows the verdict
+    providers = [cell("m", "groq", 0.98, 0.05), replace(cell("m", "cerebras", 0.99, 0.10), ttft_p95_s=0.4)]
+    text = "\n".join(at_a_glance(providers, conditions, {}))
+    assert "one model on 2 endpoints" in text and "| provider | quantization |" in text
+    assert "| groq ★ | unknown | 98% |" in text and "| cerebras | unknown | 99% |" in text

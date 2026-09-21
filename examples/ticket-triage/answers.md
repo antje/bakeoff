@@ -56,6 +56,16 @@ larger model is paying for nothing.
 OpenRouter's own routing already picks on price. Pin providers when latency matters; here it
 does not.
 
+### provider-run
+**Answer:** `groq,coreweave` on `openai/gpt-oss-20b`, after the model run has picked it.
+
+**Why this is good:** The model run settles which model; this run settles which endpoint
+serves it, and for a workload nobody waits on that is a price question. Groq and CoreWeave
+are two cheap serverless endpoints for the same 20B weights on different hardware; the table
+shows the price gap and the fp4 quantization on one of them, so the reader can decide whether
+a cheaper, quantized endpoint is still right often enough. Do not pin `together` for this
+model: it is not serverless there and every call returns a 400.
+
 ### concurrency
 **Answer:** 2
 

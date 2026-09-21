@@ -1,5 +1,7 @@
 # Worked example: ticket triage
 
+*A help desk's routing step. In: one support ticket. Out: which of eight queues it goes to, and the customer's plan tier.*
+
 Load it with `demo ticket-triage` at any prompt in `/eval-build` or `/bakeoff`.
 
 ## The use case, in four sentences

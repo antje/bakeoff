@@ -89,7 +89,12 @@ frontier model as the quality ceiling. Three points are enough to see whether ch
 worse here, and by how much.
 
 ### providers
-**Answer:** `cerebras,groq,sambanova,together` on `openai/gpt-oss-120b`
+**Answer:** `auto`
+
+**Why this is good:** This is the model run, so OpenRouter routes each model wherever it routes. Pinning providers here would cross three models with four providers, and Sonnet is not served by Cerebras or Groq at all.
+
+### provider-run
+**Answer (second run, after the model run):** `cerebras,groq,sambanova,together` on `openai/gpt-oss-120b`
 
 **Why this is good:** Same weights, four different architectures behind the endpoint:
 wafer-scale, LPU, RDU, and NVIDIA GPU. It is the one comparison a developer cannot make any

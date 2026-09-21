@@ -85,8 +85,13 @@ def verdict(
     tolerance: float = 0.05,
     baseline: float = 0.0,
     ttft_budget_s: float | None = None,
-) -> str:
+    as_cell: bool = False,
+) -> str | Summary:
     """Name the cell to route to, and say why in one sentence.
+
+    With ``as_cell`` the function returns the chosen Summary instead of the
+    sentence (None when every call errored), so the at-a-glance table can mark
+    the same cell the sentence names.
 
     Cells at or below the trivial baseline are not contenders: routing to a
     model that a constant answer would beat is not a routing decision. Cells
@@ -102,7 +107,7 @@ def verdict(
     """
     scored = [s for s in summaries if s.calls - s.errors > 0]
     if not scored:
-        return "No verdict: every call errored."
+        return None if as_cell else "No verdict: every call errored."
     caveats: list[str] = []
     above = [s for s in scored if s.gate_pass_rate > baseline]
     if above:
@@ -134,6 +139,8 @@ def verdict(
     priced = [s for s in contenders if s.cost_per_correct_call_usd is not None]
     if priced:
         pick = min(priced, key=lambda s: s.cost_per_correct_call_usd or 0)
+        if as_cell:
+            return pick
         return prefix + (
             f"Route to {pick.model} @ {pick.provider}: gate {pick.gate_pass_rate:.0%} "
             f"(within {tolerance:.0%} of the best, {best_rate:.0%}) at "
@@ -141,6 +148,8 @@ def verdict(
             f"{len(contenders)} contender(s)." + dropped
         )
     pick = min(contenders, key=lambda s: s.ttft_p95_s)
+    if as_cell:
+        return pick
     return prefix + (
         f"Route to {pick.model} @ {pick.provider}: gate {pick.gate_pass_rate:.0%} and the "
         f"lowest p95 TTFT ({pick.ttft_p95_s:.2f}s) among {len(contenders)} contender(s). "
@@ -243,10 +252,75 @@ def markdown_report(
         ),
         "",
     ]
+    lines += at_a_glance(summaries, conditions, endpoints, baseline)
     notes = [f"- {s.model} @ {s.provider}: {n}" for s in summaries for n in s.notes]
     if notes:
         lines += ["## Notes", ""] + notes + [""]
     return "\n".join(lines)
+
+
+def _fmt_per_1k(value: float | None) -> str:
+    return "n/a" if value is None else f"${value * 1000:,.3f}" if value * 1000 < 1 else f"${value * 1000:,.2f}"
+
+
+def at_a_glance(
+    summaries: list[Summary],
+    conditions: RunConditions,
+    endpoints: dict[tuple[str, str], EndpointInfo | None],
+    baseline: Baseline | None = None,
+) -> list[str]:
+    """The results table cut down to the columns a decision is read from.
+
+    Two shapes, chosen by what the run compared. Several models: gate, per-user
+    latency, cost per thousand tasks and per thousand correct calls, consistency.
+    One model on several providers: gate, TTFT p50 and p95, decode speed, cost per
+    thousand correct calls, with the quantization the endpoint reported, because
+    that is the provider question. Costs are per thousand so they read as money.
+    The starred row is the verdict's cell; the full table above still holds
+    every column and the conditions block still governs both.
+    """
+    if not summaries:
+        return []
+    pick = verdict(
+        summaries,
+        tolerance=conditions.tolerance,
+        baseline=baseline.rate if baseline else 0.0,
+        ttft_budget_s=conditions.ttft_budget_s,
+        as_cell=True,
+    )
+    star = lambda s: " ★" if s is pick else ""  # noqa: E731
+    lines = ["## At a glance", ""]
+    if len({s.model for s in summaries}) == 1 and len(summaries) > 1:
+        model = summaries[0].model
+        lines += [
+            f"{model}, one model on {len(summaries)} endpoints:",
+            "",
+            "| provider | quantization | gate | TTFT p50 | TTFT p95 | tok/s/user | $ / 1k correct |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        for s in summaries:
+            info = endpoints.get((s.model, s.provider))
+            quant = info.quantization if info else "unknown"
+            lines.append(
+                f"| {s.provider}{star(s)} | {quant} | {s.gate_pass_rate:.0%} | {s.ttft_p50_s:.2f}s | "
+                f"{s.ttft_p95_s:.2f}s | {s.tokens_per_s_per_user_p50:.0f} | "
+                f"{_fmt_per_1k(s.cost_per_correct_call_usd)} |"
+            )
+    else:
+        lines += [
+            "| model | gate | TTFT p50 | e2e p95 | $ / 1k tasks | $ / 1k correct | consistency |",
+            "|---|---|---|---|---|---|---|",
+        ]
+        if baseline is not None:
+            lines.append(f"| *trivial baseline* | *{baseline.rate:.0%}* | | | | | |")
+        for s in summaries:
+            lines.append(
+                f"| {s.model}{star(s)} | {s.gate_pass_rate:.0%} | {s.ttft_p50_s:.2f}s | {s.e2e_p95_s:.2f}s | "
+                f"{_fmt_per_1k(s.cost_per_task_usd)} | {_fmt_per_1k(s.cost_per_correct_call_usd)} | "
+                f"{_fmt_pct(s.consistency)} |"
+            )
+    lines += ["", "★ the verdict's cell. Endpoint-level, on the conditions above.", ""]
+    return lines
 
 
 def write_report(

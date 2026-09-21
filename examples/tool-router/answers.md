@@ -50,11 +50,32 @@ is fidelity: which of the cheap models emits an exact call turn after turn, and 
 gap to the frontier model is a few percent or a cliff.
 
 ### providers
-**Answer:** `cerebras,groq,together` on `openai/gpt-oss-120b`
+**Answer:** `auto`
+
+**Why this is good:** Model run first. Tool-calling support differs by provider, but that is a question about the winner's endpoint, and the winner is not known yet.
+
+### flags
+**Answer:** `--tolerance 0`
+
+**Why this is good:** A wrong argument is a wrong refund to a real card, so 98% and 100% are not the same thing. Tolerance 0 means only cells at the best gate rate are contenders, and it is recorded in the conditions block.
+
+### provider-run
+**Answer (second run, after the model run):** `cerebras,groq,together` on `openai/gpt-oss-120b`
 
 **Why this is good:** Tool calling is a serving-stack feature as much as a model feature. Some
 providers do not serve it for an open model; the report says so as a note. The ones that do
 differ on latency, and the operator is waiting.
+
+### live
+**Answer:** Show the kept model run (`results-sample.md`: conditions block and verdict), then
+run live: `openai/gpt-oss-120b` on `cerebras,groq`, `concurrency 2, runs 1, limit 4,
+reasoning off`. About 7 seconds, 24 calls.
+
+**Why this is good:** The model run is the slow half, four models replayed twice, and it does
+not change between evenings; its report carries its own date and conditions. The provider
+run is the fast half and the one worth watching: same weights, two serving stacks, a wafer
+and an LPU, and the notes under the table say which one refused `reasoning off`. Four
+sessions is a demo, not a result; the twenty-session, three-run table is next to it.
 
 ### concurrency
 **Answer:** 2

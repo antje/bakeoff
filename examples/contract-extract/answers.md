@@ -50,7 +50,17 @@ whether the small models still find the needle among the distractors, and whethe
 one's input price is justified by a gate difference or is just a bigger bill for reading.
 
 ### providers
-**Answer:** `cerebras,groq,together` on `openai/gpt-oss-120b`
+**Answer:** `auto`
+
+**Why this is good:** Model run first. The buyer's 2 s budget is applied to every cell the same way, so the model question is settled before the endpoint question.
+
+### flags
+**Answer:** `--ttft-budget 2`
+
+**Why this is good:** The buyer is watching a spinner, and the eval names 2 s TTFT p95 as the budget. Cells over it are listed under the verdict as not contenders, so the report answers the buyer's question and not just the accountant's.
+
+### provider-run
+**Answer (second run, after the model run):** `cerebras,groq,together` on `openai/gpt-oss-120b`
 
 **Why this is good:** Same weights, three serving stacks, on a 4,500-token prompt. Prefill is
 where they differ, and this is the shape that makes the difference visible. The report says

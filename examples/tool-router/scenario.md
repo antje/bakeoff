@@ -1,5 +1,7 @@
 # Worked example: tool router
 
+*A support copilot's tool-calling step. In: what the operator said, five tool definitions, and the results of earlier calls. Out: one exact API call with the right ids and amounts.*
+
 Load it with `demo tool-router` at any prompt in `/eval-build` or `/bakeoff`.
 
 ## The use case, in four sentences

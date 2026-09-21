@@ -1,5 +1,7 @@
 # Worked example: contract extraction
 
+*A procurement tool's lookup step. In: a whole signed contract (about 4,500 tokens) and one question. Out: one number or one name.*
+
 Load it with `demo contract-extract` at any prompt in `/eval-build` or `/bakeoff`.
 
 ## The use case, in four sentences

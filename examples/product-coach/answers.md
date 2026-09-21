@@ -110,10 +110,12 @@ verdict on identical input is not one you can route to on the strength of one ru
 only find out by asking twice.
 
 ### limit
-**Answer:** 5 for a live demo (about two minutes); the full 20 for a real result.
+**Answer:** 4 for a stage demo on one open model and two providers (about eleven seconds);
+5 for a longer live look (about two minutes with three models); the full 20 for a real result.
 
-**Why this is good:** A live audience will not wait ten minutes. Five trajectories show the
-mechanics; the precomputed 20-trajectory table shows the numbers.
+**Why this is good:** A live audience will not wait ten minutes. Four or five trajectories
+show the mechanics; the precomputed 20-trajectory table shows the numbers. Say which one
+you are showing: four is a demo, twenty is a result.
 
 ### reasoning
 **Answer:** low

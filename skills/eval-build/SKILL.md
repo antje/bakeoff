@@ -18,7 +18,8 @@ written after looking at a model's output (that is grading on a curve you drew y
 
 At every prompt below, the developer can type `demo` to load the worked example from
 `examples/product-coach/answers.md`. When they do, show the answer and its "why this is
-good" line before moving on. The example teaches; it does not skip the lesson.
+good" line, then ask whether to use that answer or take their own. The example teaches; it
+does not skip the lesson.
 
 ## When to use
 

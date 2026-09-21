@@ -16,7 +16,8 @@ when the workload is an agent (per task, or nothing), call a one-run difference 
 
 At every prompt below, the developer can type `demo` to load the worked example from
 `examples/product-coach/answers.md`. When they do, show the answer and its "why this is
-good" line before moving on. The example is there to teach, not to skip the lesson.
+good" line, then ask whether to use that answer or take their own. The example is there to
+teach, not to skip the lesson.
 
 ## When to use
 

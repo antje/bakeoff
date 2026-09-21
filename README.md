@@ -1,3 +1,5 @@
+<img src="assets/logo.jpg" alt="bakeoff" width="120">
+
 # bakeoff
 
 **A bake-off for your agent.** Build an eval from your own workload, run it against any model on OpenRouter, decide by cost per correct call.

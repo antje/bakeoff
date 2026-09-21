@@ -19,6 +19,14 @@ wall-clock seconds measured on the client, which means they include network
 time. That is deliberate: it is what a developer's users experience, and the
 conditions block says so.
 
+Tool calling. When the trajectory carries tool schemas they go on every
+request, and after a turn where the model called a tool the history gets the
+assistant's `tool_calls` message followed by one `tool` message per call
+holding the *recorded* result from the trajectory. Nothing is executed; every
+model is shown the same world, the way MLPerf replays recorded tool outputs.
+Known gap: reasoning models that need `reasoning_details` echoed back to keep
+tool-call coherence (some DeepSeek and Qwen endpoints) are not handled.
+
 Easy to get wrong: OpenRouter's cost and token counts arrive in the final
 chunk's `usage`. Stop reading early and they are gone.
 """
@@ -32,7 +40,9 @@ from openai import BadRequestError, OpenAI, RateLimitError
 
 from .client import Target, request_extras
 from .gate import check
-from .models import CallRecord, Trajectory
+from .models import CallRecord, Trajectory, Turn
+
+UNKNOWN_TOOL_RESULT = "error: unknown tool"
 
 
 @dataclass
@@ -40,7 +50,7 @@ class StreamResult:
     """Everything one streamed call produced, before it becomes a CallRecord."""
 
     text: str
-    tool_calls: list[dict]
+    tool_calls: list[dict]  # each {"id", "name", "arguments"}; arguments is the raw JSON string
     time_to_first_token_s: float  # first token the user can see
     time_to_first_output_s: float  # first token of any kind, reasoning included
     total_latency_s: float
@@ -50,6 +60,7 @@ class StreamResult:
     reasoning_chars: int
     finish_reason: str | None
     reasoning_used: str = ""  # what was actually requested, after any fallback
+    synthesised_ids: int = 0  # tool calls the provider streamed without an id
 
 
 def stream_one_call(
@@ -59,12 +70,18 @@ def stream_one_call(
     session_id: str,
     max_tokens: int,
     reasoning: str = "low",
+    tools: list[dict] | None = None,
 ) -> StreamResult:
     """Send one chat request with streaming on and measure it.
 
     Returns the assembled text, any tool calls, TTFT, total latency, and the
     provider-reported usage. Tool-call fragments are accumulated by index the
-    way the OpenAI streaming protocol delivers them.
+    way the OpenAI streaming protocol delivers them; the call id is assigned
+    from whichever fragment carries it (some providers repeat it on every
+    fragment, some send it once), never concatenated. A call that never gets
+    an id is given `call_<index>` so the tool message can still reference it.
+    `tools` is sent only when present, so a text-only run is byte-identical
+    to one from before tool support existed.
 
     Reasoning models stream their thinking as a separate `reasoning` field
     before any content. That is not counted as the first *visible* token
@@ -83,6 +100,7 @@ def stream_one_call(
     finish_reason: str | None = None
     usage = None
 
+    tool_kwargs: dict = {"tools": tools, "tool_choice": "auto"} if tools else {}
     stream = client.chat.completions.create(
         model=target.model,
         messages=messages,
@@ -91,6 +109,7 @@ def stream_one_call(
         stream_options={"include_usage": True},
         extra_body=extra_body,
         extra_headers=extra_headers,
+        **tool_kwargs,
     )
     for chunk in stream:
         if getattr(chunk, "usage", None):
@@ -120,13 +139,28 @@ def stream_one_call(
                 first_token_at = time.perf_counter()
             if first_output_at is None:
                 first_output_at = first_token_at
-            slot = tool_calls.setdefault(fragment.index, {"name": "", "arguments": ""})
+            index = getattr(fragment, "index", None)
+            if index is None:
+                # A few servers omit the index; a fragment with a new id starts
+                # a new call, anything else continues the latest one.
+                fragment_id = getattr(fragment, "id", None)
+                known = {slot["id"] for slot in tool_calls.values()}
+                starts_new = not tool_calls or (fragment_id and fragment_id not in known)
+                index = len(tool_calls) if starts_new else max(tool_calls)
+            slot = tool_calls.setdefault(index, {"id": "", "name": "", "arguments": ""})
+            if getattr(fragment, "id", None):
+                slot["id"] = fragment.id
             if fragment.function and fragment.function.name:
                 slot["name"] += fragment.function.name
             if fragment.function and fragment.function.arguments:
                 slot["arguments"] += fragment.function.arguments
 
     finished = time.perf_counter()
+    synthesised = 0
+    for index, slot in tool_calls.items():
+        if not slot["id"]:
+            slot["id"] = f"call_{index}"
+            synthesised += 1
     # A response with no content at all still "started" when it finished, so
     # TTFT never exceeds total latency.
     ttft = (first_token_at or finished) - started
@@ -153,6 +187,7 @@ def stream_one_call(
         cost_usd=cost,
         reasoning_chars=reasoning_chars,
         finish_reason=finish_reason,
+        synthesised_ids=synthesised,
     )
 
 
@@ -164,6 +199,7 @@ def call_with_backoff(
     max_tokens: int,
     reasoning: str,
     attempts: int = 5,
+    tools: list[dict] | None = None,
 ) -> StreamResult:
     """Retry a call on HTTP 429, waiting longer each time.
 
@@ -179,12 +215,16 @@ def call_with_backoff(
     """
     for attempt in range(attempts):
         try:
-            result = stream_one_call(client, target, messages, session_id, max_tokens, reasoning)
+            result = stream_one_call(
+                client, target, messages, session_id, max_tokens, reasoning, tools
+            )
             result.reasoning_used = reasoning
             return result
         except BadRequestError as err:
             if reasoning == "off" and "reasoning" in str(err).lower():
-                result = stream_one_call(client, target, messages, session_id, max_tokens, "low")
+                result = stream_one_call(
+                    client, target, messages, session_id, max_tokens, "low", tools
+                )
                 result.reasoning_used = "low (endpoint refused off)"
                 return result
             raise
@@ -193,6 +233,53 @@ def call_with_backoff(
                 raise
             time.sleep(5 * (2**attempt))
     raise RuntimeError("unreachable")
+
+
+def _tool_content(tool_result: str | dict[str, str] | None, name: str) -> str:
+    """The recorded output to feed back for one call, or the sentinel when none was recorded."""
+    if tool_result is None:
+        return UNKNOWN_TOOL_RESULT
+    if isinstance(tool_result, str):
+        return tool_result
+    return tool_result.get(name, UNKNOWN_TOOL_RESULT)
+
+
+def extend_history(history: list[dict], result: StreamResult, turn: Turn) -> None:
+    """Append what the model said, in the shape the next request needs.
+
+    Text answer: one assistant message, as before. Tool calls: the assistant
+    message carrying `tool_calls`, then exactly one `tool` message per call in
+    call order, each with the recorded result. Every provider on the OpenAI
+    protocol requires each call id to be answered before the next user turn;
+    Anthropic via OpenRouter rejects the request otherwise. `content` is
+    omitted rather than set to null on the tool-call message, because some
+    providers reject null.
+    """
+    if not result.tool_calls:
+        history.append({"role": "assistant", "content": result.text or ""})
+        return
+    assistant: dict = {
+        "role": "assistant",
+        "tool_calls": [
+            {
+                "id": call["id"],
+                "type": "function",
+                "function": {"name": call["name"], "arguments": call["arguments"] or "{}"},
+            }
+            for call in result.tool_calls
+        ],
+    }
+    if result.text:
+        assistant["content"] = result.text
+    history.append(assistant)
+    for call in result.tool_calls:
+        history.append(
+            {
+                "role": "tool",
+                "tool_call_id": call["id"],
+                "content": _tool_content(turn.tool_result, call["name"]),
+            }
+        )
 
 
 def replay_trajectory(
@@ -206,9 +293,11 @@ def replay_trajectory(
     """Replay one trajectory closed-loop and return one CallRecord per turn.
 
     The history starts with the trajectory's system prompt (if any). After each
-    turn the model's own answer is appended as the assistant message, so the
+    turn the model's own answer is appended (see `extend_history`), so the
     next turn sees it. An exception on one turn is recorded as an errored,
-    failed call and the replay continues with the history as it stands.
+    failed call and the replay continues with the history as it stands. When
+    the trajectory has tools and the endpoint refuses them, the record is
+    tagged `tools_rejected` so the report can say why the row scored zero.
     """
     session_id = f"{trajectory.trajectory_id}-run{run}"
     history: list[dict] = []
@@ -219,7 +308,10 @@ def replay_trajectory(
     for turn_index, turn in enumerate(trajectory.turns):
         history.append({"role": "user", "content": turn.input})
         try:
-            result = call_with_backoff(client, target, history, session_id, max_tokens, reasoning)
+            result = call_with_backoff(
+                client, target, history, session_id, max_tokens, reasoning,
+                tools=trajectory.tools or None,
+            )
             passed = check(turn.expected, result.text, result.tool_calls)
             records.append(
                 CallRecord(
@@ -242,11 +334,15 @@ def replay_trajectory(
                         "reasoning_chars": result.reasoning_chars,
                         "finish_reason": result.finish_reason,
                         "reasoning_used": result.reasoning_used,
+                        "synthesised_ids": result.synthesised_ids,
                     },
                 )
             )
-            history.append({"role": "assistant", "content": result.text or ""})
+            extend_history(history, result, turn)
         except Exception as err:  # noqa: BLE001 - any provider error is one failed call
+            # OpenRouter answers a pinned provider with no tool support with a
+            # 404 "No endpoints found that support tool use", so match the text.
+            tools_rejected = bool(trajectory.tools) and "tool" in str(err).lower()
             records.append(
                 CallRecord(
                     trajectory_id=trajectory.trajectory_id,
@@ -264,6 +360,7 @@ def replay_trajectory(
                     cost_usd=None,
                     output_text="",
                     error=f"{type(err).__name__}: {err}"[:300],
+                    extra={"tools_rejected": True} if tools_rejected else {},
                 )
             )
             history.append({"role": "assistant", "content": ""})

@@ -189,7 +189,9 @@ def main(argv: list[str] | None = None) -> int:
         reasoning=args.reasoning,
     )
     args.out.mkdir(parents=True, exist_ok=True)
-    json_path, md_path, summaries = write_report(args.out, records, conditions, targets, endpoints)
+    json_path, md_path, summaries = write_report(
+        args.out, records, conditions, targets, endpoints, trajectories
+    )
 
     print()
     print(md_path.read_text())

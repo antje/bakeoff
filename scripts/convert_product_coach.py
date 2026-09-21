@@ -116,7 +116,10 @@ def make_log(experiment: dict, history: list[dict]) -> dict:
         "reviewed_on": experiment["startDate"],
         "brief": {
             k: experiment[k]
-            for k in ("name", "hypothesis", "mechanism", "audience", "primaryMetric", "baselinePp", "expectedLiftPp")
+            for k in (
+                "name", "hypothesis", "mechanism", "audience",
+                "primaryMetric", "baselinePp", "expectedLiftPp",
+            )
         },
         "history_ids": [h["id"] for h in history],
         "outcome": {"actualLiftPp": experiment["actualLiftPp"], "shipped": experiment["outcome"]},

@@ -9,10 +9,15 @@ The vocabulary, once:
 - A **trajectory** is one conversation with an agent: several turns in order.
   It is the unit MLPerf's agentic benchmark replays, because later turns depend
   on earlier ones and a single prompt in isolation would not exercise that.
-- A **turn** is one user input plus what a correct answer looks like.
+- A **turn** is one user input plus what a correct answer looks like, and,
+  when the agent has tools, the **recorded tool output** to feed back after
+  the model's call. MLPerf replays recorded outputs the same way: the tool is
+  never really run, so every model sees the same world.
 - An **expected** answer is ground truth written down before the model runs:
   a tool call (name plus arguments), a label from a closed set, or a text
   pattern. Never an opinion formed after seeing the output.
+- A trajectory's **tools** are OpenAI tool schemas sent verbatim with every
+  request. Absent for an agent that only answers in text.
 - A **call record** is what one model call actually did: the tokens, the
   timings, the cost, and whether it passed the gate.
 
@@ -57,23 +62,36 @@ class Expected:
 
 @dataclass
 class Turn:
-    """One user input and its expected answer."""
+    """One user input, its expected answer, and the recorded tool output, if any.
+
+    tool_result: what the tool returned when this conversation really happened.
+        A string is fed back to every call the model makes on this turn; a dict
+        keyed by tool name feeds each call its own result. None on a turn where
+        the agent answers in text.
+    """
 
     input: str
     expected: Expected
+    tool_result: str | dict[str, str] | None = None
 
 
 @dataclass
 class Trajectory:
-    """One conversation to replay: an id, an optional system prompt, ordered turns."""
+    """One conversation to replay: an id, an optional system prompt, ordered turns,
+    and the tool schemas the agent had (None when it had none)."""
 
     trajectory_id: str
     turns: list[Turn]
     system: str | None = None
+    tools: list[dict] | None = None
 
     @property
     def turn_count(self) -> int:
         return len(self.turns)
+
+    @property
+    def has_tools(self) -> bool:
+        return bool(self.tools)
 
 
 @dataclass
@@ -132,9 +150,29 @@ def trajectory_from_dict(raw: dict) -> Trajectory:
             expected.kind()
         except ValueError as err:
             raise ValueError(f"{trajectory_id} turn {index}: {err}") from err
-        turns.append(Turn(input=str(turn_raw["input"]), expected=expected))
+        tool_result = turn_raw.get("tool_result")
+        if tool_result is not None and not (
+            isinstance(tool_result, str)
+            or (
+                isinstance(tool_result, dict)
+                and all(isinstance(v, str) for v in tool_result.values())
+            )
+        ):
+            raise ValueError(
+                f"{trajectory_id} turn {index}: tool_result must be a string or a dict of strings"
+            )
+        turns.append(Turn(input=str(turn_raw["input"]), expected=expected, tool_result=tool_result))
 
-    return Trajectory(trajectory_id=trajectory_id, turns=turns, system=raw.get("system"))
+    tools = raw.get("tools")
+    if tools is not None:
+        for i, tool in enumerate(tools):
+            if not (isinstance(tool, dict) and isinstance(tool.get("function"), dict)
+                    and tool["function"].get("name")):
+                raise ValueError(f"{trajectory_id}: tools[{i}] is not an OpenAI tool schema")
+
+    return Trajectory(
+        trajectory_id=trajectory_id, turns=turns, system=raw.get("system"), tools=tools or None
+    )
 
 
 def load_trajectories(path: Path) -> list[Trajectory]:
@@ -157,8 +195,12 @@ def save_trajectories(path: Path, trajectories: list[Trajectory]) -> None:
         raw = asdict(trajectory)
         for turn in raw["turns"]:
             turn["expected"] = {k: v for k, v in turn["expected"].items() if v is not None}
+            if turn["tool_result"] is None:
+                del turn["tool_result"]
         if raw["system"] is None:
             del raw["system"]
+        if raw["tools"] is None:
+            del raw["tools"]
         lines.append(json.dumps(raw, ensure_ascii=False))
     path.write_text("\n".join(lines) + "\n")
 

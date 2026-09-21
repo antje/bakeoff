@@ -16,6 +16,11 @@ The verdict is computed, not chosen: the cheapest cell (by cost per correct
 call) whose gate pass rate is within `tolerance` of the best cell's. If no
 cell has a cost, the verdict falls back to the fastest p95 TTFT among the
 most accurate cells.
+
+The table's first row is the trivial baseline: what a constant answer per
+turn would score on this eval, computed from the trajectories before any
+model ran. It is the zero of the gate column. A model row at or below it has
+not read the input, whatever its price, and the verdict says so.
 """
 
 from __future__ import annotations
@@ -27,8 +32,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from .client import EndpointInfo, Target
-from .metrics import Summary, summarise
-from .models import CallRecord, save_records
+from .metrics import Baseline, Summary, summarise, trivial_baseline
+from .models import CallRecord, Trajectory, save_records
 
 
 @dataclass
@@ -69,11 +74,22 @@ def group_by_target(records: list[CallRecord]) -> dict[tuple[str, str], list[Cal
     return cells
 
 
-def verdict(summaries: list[Summary], tolerance: float = 0.05) -> str:
-    """Name the cell to route to, and say why in one sentence."""
+def verdict(summaries: list[Summary], tolerance: float = 0.05, baseline: float = 0.0) -> str:
+    """Name the cell to route to, and say why in one sentence.
+
+    Cells at or below the trivial baseline are not contenders: routing to a
+    model that a constant answer would beat is not a routing decision.
+    """
     scored = [s for s in summaries if s.calls - s.errors > 0]
     if not scored:
         return "No verdict: every call errored."
+    above = [s for s in scored if s.gate_pass_rate > baseline]
+    if not above:
+        return (
+            f"No verdict: no cell beat the trivial baseline of {baseline:.0%}. "
+            "The eval is not separating models; tighten the gate or the prompts before routing."
+        )
+    scored = above
     best_rate = max(s.gate_pass_rate for s in scored)
     contenders = [s for s in scored if s.gate_pass_rate >= best_rate - tolerance]
     priced = [s for s in contenders if s.cost_per_correct_call_usd is not None]
@@ -105,6 +121,7 @@ def markdown_report(
     summaries: list[Summary],
     conditions: RunConditions,
     endpoints: dict[tuple[str, str], EndpointInfo | None],
+    baseline: Baseline | None = None,
 ) -> str:
     """Render conditions, per-cell endpoint facts, the results table, and the verdict."""
     lines = ["# bakeoff results", ""]
@@ -148,6 +165,14 @@ def markdown_report(
         "tok/s/user | $/task | $/correct | consistency | errors |"
     )
     lines += [header, "|---|---|---|---|---|---|---|---|---|---|---|---|"]
+    if baseline is not None:
+        answers = ", ".join(
+            f"turn {i + 1}: {answer!r}" for i, (answer, _, _) in sorted(baseline.per_turn.items())
+        )
+        lines.append(
+            f"| *trivial baseline* | *constant answer* | *{baseline.rate:.0%}* | | | | | | | | | |"
+        )
+        lines.append(f"| | ({answers}) | | | | | | | | | | |")
     for s in summaries:
         lines.append(
             f"| {s.model} | {s.provider} | {s.gate_pass_rate:.0%} | {s.ttft_p50_s:.2f}s | "
@@ -159,11 +184,12 @@ def markdown_report(
         "",
         "TTFT: time to first token. TPOT: time per output token. e2e: end-to-end latency per turn. "
         "tok/s/user: output tokens per second for one stream. $/task: cost summed over a trajectory. "
-        "$/correct: total cost divided by calls that passed the gate.",
+        "$/correct: total cost divided by calls that passed the gate. "
+        "trivial baseline: what a constant answer per turn scores; the zero of the gate column.",
         "",
         "## Verdict",
         "",
-        verdict(summaries),
+        verdict(summaries, baseline=baseline.rate if baseline else 0.0),
         "",
     ]
     notes = [f"- {s.model} @ {s.provider}: {n}" for s in summaries for n in s.notes]
@@ -178,8 +204,12 @@ def write_report(
     conditions: RunConditions,
     targets: list[Target],
     endpoints: dict[tuple[str, str], EndpointInfo | None],
+    trajectories: list[Trajectory] | None = None,
 ) -> tuple[Path, Path, list[Summary]]:
-    """Write results-<stamp>.json and results-<stamp>.md; return their paths and the summaries."""
+    """Write results-<stamp>.json and results-<stamp>.md; return their paths and the summaries.
+
+    `trajectories` are the ones that were replayed; they give the trivial
+    baseline row. Without them the row is omitted."""
     stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
     json_path = out_dir / f"results-{stamp}.json"
     md_path = out_dir / f"results-{stamp}.md"
@@ -190,7 +220,8 @@ def write_report(
     ordered_keys = [(t.model, t.provider) for t in targets if (t.model, t.provider) in cells]
     summaries = [summarise(cells[key]) for key in ordered_keys]
 
-    md_path.write_text(markdown_report(summaries, conditions, endpoints))
+    baseline = trivial_baseline(trajectories) if trajectories else None
+    md_path.write_text(markdown_report(summaries, conditions, endpoints, baseline))
     meta_path = out_dir / f"results-{stamp}.conditions.json"
     meta_path.write_text(json.dumps(asdict(conditions), indent=2))
     return json_path, md_path, summaries

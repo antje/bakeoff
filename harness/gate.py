@@ -15,10 +15,11 @@ works, and every number it produces is labelled "judged" in the report.
 Three checks, one per kind of Expected:
 
 - tool_call: the model called the same tool with matching arguments.
-- label: the model's text, trimmed and lower-cased, equals the label. A model
-  that writes "Billing." or "The category is billing" also passes when the
-  label appears as a whole word, because the point is the decision, not the
-  punctuation.
+- label: the first non-empty line of the model's text, trimmed and
+  lower-cased, equals the label or contains it as a whole word. "Billing."
+  and "The category is billing" pass; "OBJECT. I would not decline" passes
+  only OBJECT. Every prompt with a label gate asks for the answer on the
+  first line, so the rest of the text is explanation, not decision.
 - pattern: a regex search over the model's text.
 """
 
@@ -63,15 +64,18 @@ def check_tool_call(expected: dict, actual_calls: list[dict]) -> bool:
 
 
 def check_label(expected: str, text: str) -> bool:
-    """Pass if the text is the label, or contains it as a whole word.
+    """Pass if the first non-empty line is the label, or contains it as a whole word.
 
     Case-insensitive. Whole-word so that "billing" does not pass on
-    "rebilling". Easy to get wrong: labels that are substrings of each other
+    "rebilling". First line only, so an answer that names the other label in
+    its reasoning ("OBJECT. I would not decline this") passes one label, not
+    two. Easy to get wrong: labels that are substrings of each other
     ("urgent" vs "not urgent"); put the negated one first in your label set
     or use a pattern check instead.
     """
     wanted = expected.strip().lower()
-    got = text.strip().lower()
+    lines = [line.strip() for line in text.strip().splitlines() if line.strip()]
+    got = lines[0].lower() if lines else ""
     if got == wanted:
         return True
     return re.search(rf"\b{re.escape(wanted)}\b", got) is not None

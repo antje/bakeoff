@@ -10,14 +10,17 @@ the later turns are the expensive ones. A developer should see "about $2.40"
 before the first request, not "$41" on next month's invoice.
 
 How it is estimated. Input tokens for turn k are roughly the sum of all
-earlier inputs plus earlier outputs (that is what closed-loop replay sends).
-We approximate tokens as characters / 4, assume `max_tokens` per output as
-the ceiling, and multiply by the provider's per-token prices from the
-endpoints API. It is an upper bound, and the report says "estimated".
+earlier inputs plus earlier outputs (that is what closed-loop replay sends),
+plus the tool schemas, which go on every request, and the recorded tool
+results, which join the history. We approximate tokens as characters / 4,
+assume `max_tokens` per output as the ceiling, and multiply by the provider's
+per-token prices from the endpoints API. It is an upper bound, and the report
+says "estimated".
 """
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 
@@ -49,13 +52,24 @@ def estimate_tokens(trajectories: list[Trajectory], max_tokens: int) -> tuple[in
     output_tokens = 0
     for trajectory in trajectories:
         history_tokens = len(trajectory.system or "") // CHARS_PER_TOKEN
+        if trajectory.tools:
+            history_tokens += len(json.dumps(trajectory.tools)) // CHARS_PER_TOKEN
         for turn in trajectory.turns:
             history_tokens += len(turn.input) // CHARS_PER_TOKEN
             input_tokens += history_tokens
             output_tokens += max_tokens
             history_tokens += max_tokens  # the answer joins the history for the next turn
+            history_tokens += _tool_result_chars(turn.tool_result) // CHARS_PER_TOKEN
             calls += 1
     return calls, input_tokens, output_tokens
+
+
+def _tool_result_chars(tool_result: str | dict[str, str] | None) -> int:
+    if tool_result is None:
+        return 0
+    if isinstance(tool_result, str):
+        return len(tool_result)
+    return sum(len(v) for v in tool_result.values())
 
 
 def estimate_run(

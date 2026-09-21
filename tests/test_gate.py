@@ -54,3 +54,10 @@ def test_check_dispatches_on_expected_kind():
         "",
         [{"name": "t", "arguments": {}}],
     )
+
+
+def test_label_is_judged_on_the_first_line_only():
+    assert check_label("object", "OBJECT\nI would not decline this brief.")
+    assert not check_label("decline", "OBJECT\nI would not decline this brief.")
+    assert check_label("billing", "\n\n  The category is billing.\nMore text.")
+    assert not check_label("billing", "")

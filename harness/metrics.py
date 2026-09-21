@@ -29,14 +29,20 @@ The metrics, and who feels each one:
 - **Consistency**: when the same trajectory is replayed twice, how often the
   gate result agrees. A model that flips between runs is not one you can route
   to on the strength of one run.
+- **Trivial baseline**: the gate rate a constant answer per turn would get,
+  computed from the trajectories alone before any model runs. It is the zero
+  of the scale. A model at or under it has not read the input.
 """
 
 from __future__ import annotations
 
+import re
+from collections import Counter
 from dataclasses import dataclass, field
 from statistics import median
 
-from .models import CallRecord
+from .gate import check_pattern
+from .models import CallRecord, Trajectory
 
 
 def percentile(values: list[float], fraction: float) -> float:
@@ -158,6 +164,18 @@ def summarise(records: list[CallRecord]) -> Summary:
         if r.extra.get("finish_reason") == "length" and not r.output_text.strip()
     )
     fell_back = sum(1 for r in ok if "refused" in str(r.extra.get("reasoning_used", "")))
+    rejected = sum(1 for r in records if r.extra.get("tools_rejected"))
+    synthesised = sum(int(r.extra.get("synthesised_ids", 0) or 0) for r in ok)
+    if rejected:
+        notes.append(
+            f"{rejected} call(s) were refused because this endpoint does not accept tool "
+            "schemas for this model; tool_call gates cannot pass on this row"
+        )
+    if synthesised:
+        notes.append(
+            f"{synthesised} tool call(s) arrived without an id; ids were synthesised so the "
+            "replay could continue"
+        )
     if fell_back:
         notes.append(
             f"{fell_back} call(s) ran at reasoning effort low because the endpoint refused "
@@ -191,3 +209,66 @@ def summarise(records: list[CallRecord]) -> Summary:
         consistency=consistency(records),
         notes=notes,
     )
+
+
+@dataclass
+class Baseline:
+    """What a constant answer per turn scores. `per_turn` maps turn index to
+    (best constant answer, passes, turns at that index)."""
+
+    rate: float
+    per_turn: dict[int, tuple[str, int, int]]
+
+
+_ALTERNATIVES = re.compile(r"\\b\(([^()]*)\)\\b")
+
+
+def _pattern_candidates(pattern: str) -> list[str]:
+    """Literal strings a constant answer could be, read off a `\\b(a|b|c)\\b` pattern.
+
+    Anything more elaborate yields no candidates, and the turn counts as one
+    a constant cannot pass. That understates the baseline for exotic patterns,
+    never overstates it.
+    """
+    match = _ALTERNATIVES.search(pattern)
+    if not match:
+        return []
+    return [re.sub(r"\\(.)", r"\1", alt) for alt in match.group(1).split("|") if alt]
+
+
+def trivial_baseline(trajectories: list[Trajectory]) -> Baseline:
+    """Per turn index, the single answer that passes the most trajectories.
+
+    Label turns: the majority label. Pattern turns: the literal alternative
+    that matches the most patterns (patterns with no literal alternatives
+    count as unpassable). Tool-call turns: unpassable, since a constant call
+    with constant arguments matches at most the trajectories that happen to
+    share those arguments, and the harness does not credit that. The overall
+    rate is the sum of per-turn best passes over the total number of turns,
+    which is exactly how the model rows are scored.
+    """
+    per_turn: dict[int, tuple[str, int, int]] = {}
+    total_turns = 0
+    total_passes = 0
+    max_turns = max((t.turn_count for t in trajectories), default=0)
+    for index in range(max_turns):
+        turns = [t.turns[index] for t in trajectories if index < t.turn_count]
+        total_turns += len(turns)
+        labels = Counter(t.expected.label.strip().lower() for t in turns if t.expected.label)
+        best_answer, best_passes = "", 0
+        if labels:
+            best_answer, best_passes = labels.most_common(1)[0]
+        candidates: set[str] = set()
+        for turn in turns:
+            if turn.expected.pattern:
+                candidates.update(_pattern_candidates(turn.expected.pattern))
+        for candidate in sorted(candidates):
+            passes = sum(
+                1 for t in turns if t.expected.pattern and check_pattern(t.expected.pattern, candidate)
+            )
+            if passes > best_passes:
+                best_answer, best_passes = candidate, passes
+        per_turn[index] = (best_answer, best_passes, len(turns))
+        total_passes += best_passes
+    rate = total_passes / total_turns if total_turns else 0.0
+    return Baseline(rate=rate, per_turn=per_turn)

@@ -85,3 +85,29 @@ def test_summarise_excludes_errors_from_timings_but_counts_them_as_failed():
     assert summary.ttft_p95_s == 1.0
     assert summary.cost_per_task_usd == 0.02
     assert any("errored" in note for note in summary.notes)
+
+
+def test_trivial_baseline_takes_the_best_constant_per_turn():
+    from harness.metrics import trivial_baseline
+    from harness.models import Expected, Trajectory, Turn
+
+    def t(tid, label, pattern):
+        return Trajectory(
+            trajectory_id=tid,
+            turns=[
+                Turn(input="q1", expected=Expected(label=label)),
+                Turn(input="q2", expected=Expected(pattern=pattern)),
+                Turn(input="q3", expected=Expected(tool_call={"name": "f", "arguments": {}})),
+            ],
+        )
+
+    trajectories = [
+        t("a", "yes", r"\b(id\-1|id\-2)\b"),
+        t("b", "yes", r"\b(id\-1)\b"),
+        t("c", "no", r"\b(id\-3)\b"),
+    ]
+    baseline = trivial_baseline(trajectories)
+    assert baseline.per_turn[0] == ("yes", 2, 3)
+    assert baseline.per_turn[1] == ("id-1", 2, 3)
+    assert baseline.per_turn[2] == ("", 0, 3)
+    assert abs(baseline.rate - 4 / 9) < 1e-9

@@ -37,13 +37,26 @@ Light surfaces (notes view, docs) invert ink and paper: `--bg #f6f4ee`, `--fg #1
 
 ## Type
 
+One family, two cuts. Contrast comes from size and weight, never from a second display face.
+
 | Face | Weight | Where |
 |---|---|---|
-| Instrument Serif | 400 roman | slide titles, section headings. Italic only for the tagline. |
-| Inter | 400 / 500 / 600 | body, table headers, chat |
-| JetBrains Mono | 400 / 600 | numbers, commands, model and provider names, footers, labels |
+| Geist | 500, tracking -0.025em | slide titles, big lines, the three questions |
+| Geist | 400 / 500 / 600 | body, tagline, table headers, chat. Emphasis is 600, never italic. |
+| Geist Mono | 400 / 500 / 600 | wordmark (600, tracking -0.04em), numbers, commands, model and provider names, footers, labels |
 
-Numbers are always mono with `font-variant-numeric: tabular-nums`, right-aligned. Labels above tables are Inter, uppercase, 0.8em, letter-spacing 0.04em, muted. The wordmark is mono; the tagline is serif italic; that pairing is the brand voice: precise thing, said warmly.
+Numbers are always mono with `font-variant-numeric: tabular-nums`, right-aligned. Labels above tables are uppercase, 0.8em, letter-spacing 0.04em, muted. Fallbacks: Inter and JetBrains Mono, then system.
+
+## The crumbs
+
+The six pixels from the bite are the deck's only ornament. They appear in four places and nowhere else:
+
+1. **Title slide.** A trail scatters up and right from the tile's bite: amber close to the logo, fading through muted to rule color as it drifts.
+2. **Corner stamp.** A small cluster top-right of every content slide, amber, at caption scale. It is chrome, like the footer, and does not count against the one-pointer rule.
+3. **Pointer.** The verdict row in a table and the active step in a recipe carry a crumb cluster instead of a bar or a bullet.
+4. **The mark itself.**
+
+Crumbs are always the 6-square cluster or a diagonal trail of 2-unit squares. Never a grid, never a border, never a background texture.
 
 ## Components
 
@@ -55,7 +68,7 @@ Numbers are always mono with `font-variant-numeric: tabular-nums`, right-aligned
 
 **Cards.** `--surface` fill, 1px `--rule` border, 10px radius. Used for quoted chat only.
 
-**Footers.** Left: the lockup at caption size. Right: page or slide counter. Both muted mono.
+**Footers.** Left: the mark at caption size plus `bakeoff`. Right: page or slide counter. Both muted mono.
 
 ## Rules of thumb
 

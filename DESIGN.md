@@ -12,6 +12,7 @@ A bold B with a bite taken out. The bite says "sampled, not swallowed whole"; th
 | `assets/mark-light.svg` | ink B, amber crumbs, transparent. Light surfaces (docs, slides in light mode). |
 | `assets/icon-dark.svg` | ink tile. Avatars, social preview, anything that needs a solid square. |
 | `assets/icon.svg` + `icon-*.png` | amber tile. Favicon and app icons only, where a solid color must read at 16 px. |
+| `assets/logo.jpg` | amber tile with ink border, 2048 px raster. The README icon (width 120) and the GitHub social preview. |
 
 Lockup: mark, then `bakeoff` in JetBrains Mono 600, tracking -0.04em, mark height about 1.2x the x-height of the wordmark. Never stretch, recolor the B, or add a second color to the crumbs.
 

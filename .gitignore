@@ -11,10 +11,12 @@ __pycache__/
 .pytest_cache/
 dist/
 
-# Bench runs. Trajectories are committed; results carry provider names, dates,
-# and costs from a specific key and are regenerated per run.
-bench/results-*
-bench/*.png
+# Bench runs, at bench/ or in any subdirectory (--out bench/<name>). Results
+# carry provider names, dates, and costs from a specific key and are regenerated
+# per run; the reports worth keeping live in examples/<name>/results-*.md.
+bench/**/results-*
+bench/**/*.log
+bench/**/*.png
 
 # Node (linter only)
 node_modules/

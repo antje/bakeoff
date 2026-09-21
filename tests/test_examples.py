@@ -20,7 +20,7 @@ from harness.models import trajectory_from_dict
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts" / "examples"
 sys.path.insert(0, str(SCRIPTS))
 
-GENERATORS = ["ticket_triage", "contract_extract", "tool_router", "ledger_audit"]
+GENERATORS = ["ticket_triage", "contract_extract", "tool_router", "ledger_audit", "code_fix"]
 
 
 @pytest.fixture(params=GENERATORS)

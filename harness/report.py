@@ -23,7 +23,8 @@ the most accurate cells.
 The table's first row is the trivial baseline: what a constant answer per
 turn would score on this eval, computed from the trajectories before any
 model ran. It is the zero of the gate column. A model row at or below it has
-not read the input, whatever its price, and the verdict says so.
+not read the input, whatever its price, and the verdict says so: it is
+marked provisional, not withheld.
 """
 
 from __future__ import annotations
@@ -91,26 +92,39 @@ def verdict(
     model that a constant answer would beat is not a routing decision. Cells
     whose TTFT p95 is over the latency budget are not contenders either, and
     the sentence names the ones that were dropped for it.
+
+    When a filter would leave nothing (a four-trajectory demo where every cell
+    sits under the baseline, a budget nothing meets), the verdict is still
+    computed from the cells that are there, and the sentence opens with
+    "Provisional" and says which condition failed. A report that says only
+    "no verdict" leaves the reader with a table and no way to read it; a
+    provisional pick with the reason attached is the honest version of that.
     """
     scored = [s for s in summaries if s.calls - s.errors > 0]
     if not scored:
         return "No verdict: every call errored."
+    caveats: list[str] = []
     above = [s for s in scored if s.gate_pass_rate > baseline]
-    if not above:
-        return (
-            f"No verdict: no cell beat the trivial baseline of {baseline:.0%}. "
-            "The eval is not separating models; tighten the gate or the prompts before routing."
+    if above:
+        scored = above
+    else:
+        caveats.append(
+            f"no cell beat the trivial baseline of {baseline:.0%}, so this eval is not "
+            "separating models on this sample; run the full set or tighten the gate before routing"
         )
-    scored = above
     too_slow: list[Summary] = []
     if ttft_budget_s is not None:
         too_slow = [s for s in scored if s.ttft_p95_s > ttft_budget_s]
-        scored = [s for s in scored if s.ttft_p95_s <= ttft_budget_s]
-        if not scored:
-            return (
-                f"No verdict: every cell's TTFT p95 is over the {ttft_budget_s:.1f}s budget. "
-                "Relax the budget on purpose or pin a faster provider."
+        fast_enough = [s for s in scored if s.ttft_p95_s <= ttft_budget_s]
+        if fast_enough:
+            scored = fast_enough
+        else:
+            too_slow = []
+            caveats.append(
+                f"every cell's TTFT p95 is over the {ttft_budget_s:.1f}s budget; relax the "
+                "budget on purpose or pin a faster provider"
             )
+    prefix = f"Provisional ({'; '.join(caveats)}). " if caveats else ""
     dropped = ""
     if too_slow:
         names = ", ".join(f"{s.model} @ {s.provider} ({s.ttft_p95_s:.2f}s)" for s in too_slow)
@@ -120,14 +134,14 @@ def verdict(
     priced = [s for s in contenders if s.cost_per_correct_call_usd is not None]
     if priced:
         pick = min(priced, key=lambda s: s.cost_per_correct_call_usd or 0)
-        return (
+        return prefix + (
             f"Route to {pick.model} @ {pick.provider}: gate {pick.gate_pass_rate:.0%} "
             f"(within {tolerance:.0%} of the best, {best_rate:.0%}) at "
             f"{_fmt_usd(pick.cost_per_correct_call_usd)} per correct call, the cheapest of "
             f"{len(contenders)} contender(s)." + dropped
         )
     pick = min(contenders, key=lambda s: s.ttft_p95_s)
-    return (
+    return prefix + (
         f"Route to {pick.model} @ {pick.provider}: gate {pick.gate_pass_rate:.0%} and the "
         f"lowest p95 TTFT ({pick.ttft_p95_s:.2f}s) among {len(contenders)} contender(s). "
         "No cost reported by these endpoints, so cost did not decide." + dropped

@@ -133,4 +133,25 @@ def test_verdict_drops_cells_over_the_ttft_budget():
     with_budget = verdict([cheap_slow, fast], ttft_budget_s=2.0)
     assert with_budget.startswith("Route to mid")
     assert "small @ auto (4.50s)" in with_budget
-    assert "No verdict" in verdict([replace(fast, ttft_p95_s=3.0), cheap_slow], ttft_budget_s=2.0)
+    over_budget = verdict([replace(fast, ttft_p95_s=3.0), cheap_slow], ttft_budget_s=2.0)
+    assert over_budget.startswith("Provisional (every cell's TTFT p95 is over the 2.0s budget")
+    assert "Route to small" in over_budget
+
+
+def test_verdict_is_provisional_not_withheld_under_the_baseline():
+    from harness.metrics import Summary
+    from harness.report import verdict
+
+    def cell(model, rate, cost):
+        return Summary(
+            model=model, provider="auto", calls=12, errors=0, trajectories=4, gate_pass_rate=rate,
+            ttft_p50_s=0.5, ttft_p95_s=1.0, tpot_p50_s=0.01, tpot_p95_s=0.02, e2e_p50_s=1, e2e_p95_s=2,
+            tokens_per_s_per_user_p50=50, input_tokens_p50=100, output_tokens_p50=10, cost_total_usd=cost,
+            cost_per_task_usd=cost / 4, cost_per_correct_call_usd=cost / max(1, int(rate * 12)),
+            consistency=None,
+        )
+
+    out = verdict([cell("a", 0.33, 0.01), cell("b", 0.42, 0.02)], baseline=0.58)
+    assert out.startswith("Provisional (no cell beat the trivial baseline of 58%")
+    assert "Route to b @ auto" in out
+    assert verdict([cell("a", 0.9, 0.01)], baseline=0.58).startswith("Route to a")

@@ -51,6 +51,10 @@ constant passes and the trivial baseline is 0%.
 
 Reasoning effort requested: medium. This is the one example where a thinking budget is part
 of the workload; the report records it, and a low-effort run is a different experiment.
-Max tokens per turn: 400. Concurrency: 1; the history is long and the per-turn latency is
-part of the story. Runs: 2; consistency is the column that separates a model that can do
-this from one that sometimes does.
+Max tokens per turn: 1,200 (at 400, every model but Sonnet thought past the cap on turn two
+and returned nothing; at 1,200 a third of gpt-oss calls and most Qwen3.6 calls still do, and
+the sample report's notes count them). Concurrency: 6 is acceptable here because nobody is
+watching a spinner and TTFT includes thinking time either way; the report records it. Runs:
+2; consistency is the column that separates a model that can do this from one that sometimes
+does. The sample report ran the first 12 of the 20 sessions to keep one evening's spend under
+the ceiling; the full 20 is the result to quote.

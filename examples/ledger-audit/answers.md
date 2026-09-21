@@ -55,10 +55,11 @@ cheapest price per *correct* call once the others start failing.
 not a silicon question. Pin providers when TTFT is the product; here correctness is.
 
 ### concurrency
-**Answer:** 1
+**Answer:** 4
 
-**Why this is good:** Six-turn histories are long, and the per-turn latency under a reasoning
-budget is part of what the report should show cleanly.
+**Why this is good:** Nobody is watching a spinner, and with reasoning on the TTFT is mostly
+thinking time either way, so several streams in flight cost nothing that matters here and
+turn an hour into fifteen minutes. The report records whichever you chose.
 
 ### runs
 **Answer:** 2
